@@ -1,5 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useContext, useMemo, useReducer } from "react";
+import { createContext, useContext, useMemo, useReducer, useEffect } from "react";
+import { onAuthStateChanged } from "../firebase/auth.js";
 
 const initialState = {
   user: null,
@@ -65,6 +66,26 @@ const AppContext = createContext(undefined);
 
 export function AppProvider({ children }) {
   const [state, dispatch] = useReducer(appReducer, initialState);
+
+  // Listen to auth state changes
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged((user) => {
+      if (user) {
+        dispatch({
+          type: "SET_USER",
+          payload: {
+            uid: user.uid,
+            email: user.email,
+            displayName: user.displayName,
+          },
+        });
+      } else {
+        dispatch({ type: "SET_USER", payload: null });
+      }
+    });
+
+    return unsubscribe;
+  }, []);
 
   // Expose memoised actions for components to interact with global state.
   const value = useMemo(

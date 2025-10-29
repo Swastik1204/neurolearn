@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Navigate } from "react-router-dom";
 import CanvasPad from "../components/CanvasPad.jsx";
 import EmotionVisualizer from "../components/EmotionVisualizer.jsx";
 import { calculateAdaptation } from "../utils/reinforcement.js";
@@ -11,6 +12,11 @@ function Draw() {
     updateEmotion,
     updatePerformance,
   } = useAppContext();
+
+  // Redirect to login if not authenticated
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
 
   const [analysis, setAnalysis] = useState(null);
   const [isSaving, setIsSaving] = useState(false);

@@ -1,21 +1,104 @@
 {
-  "name": "NeuroLearn",
+  "name": "NeuroLearn - AI Literacy Tutor",
   "short_name": "NeuroLearn",
-  "start_url": ".",
+  "start_url": "/",
   "display": "standalone",
+  "orientation": "portrait-primary",
   "background_color": "#f1f5ff",
   "theme_color": "#6366f1",
-  "description": "Generative AI tutor providing adaptive literacy support for neurodivergent children.",
+  "description": "Generative AI tutor providing adaptive literacy support for neurodivergent children through handwriting analysis and emotional reinforcement.",
+  "categories": ["education", "productivity", "lifestyle"],
+  "lang": "en-US",
+  "dir": "ltr",
+  "scope": "/",
   "icons": [
     {
-      "src": "/vite.svg",
-      "type": "image/svg+xml",
-      "sizes": "192x192"
+      "src": "/icon-192x192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
     },
     {
-      "src": "/vite.svg",
-      "type": "image/svg+xml",
-      "sizes": "512x512"
+      "src": "/icon-512x512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-72x72.png",
+      "type": "image/png",
+      "sizes": "72x72",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-96x96.png",
+      "type": "image/png",
+      "sizes": "96x96",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-128x128.png",
+      "type": "image/png",
+      "sizes": "128x128",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-144x144.png",
+      "type": "image/png",
+      "sizes": "144x144",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Start Learning",
+      "short_name": "Learn",
+      "description": "Begin an adaptive learning session",
+      "url": "/learn",
+      "icons": [
+        {
+          "src": "/icon-96x96.png",
+          "sizes": "96x96"
+        }
+      ]
+    },
+    {
+      "name": "Practice Drawing",
+      "short_name": "Draw",
+      "description": "Practice handwriting with AI feedback",
+      "url": "/draw",
+      "icons": [
+        {
+          "src": "/icon-96x96.png",
+          "sizes": "96x96"
+        }
+      ]
+    },
+    {
+      "name": "View Progress",
+      "short_name": "Progress",
+      "description": "Check your learning progress",
+      "url": "/profile",
+      "icons": [
+        {
+          "src": "/icon-96x96.png",
+          "sizes": "96x96"
+        }
+      ]
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/screenshot-wide.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide"
+    },
+    {
+      "src": "/screenshot-narrow.png",
+      "sizes": "750x1334",
+      "type": "image/png",
+      "form_factor": "narrow"
     }
   ]
 }

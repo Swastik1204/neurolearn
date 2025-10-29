@@ -2,8 +2,11 @@ import { useEffect, useState } from "react";
 import { Link, NavLink } from "react-router-dom";
 import { FaBrain } from "react-icons/fa";
 import { HiMiniSparkles } from "react-icons/hi2";
+import { logout } from "../firebase/auth.js";
+import { useAppContext } from "../context/AppContext.jsx";
 
 function Navbar() {
+  const { state } = useAppContext();
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
@@ -25,6 +28,14 @@ function Navbar() {
     const { outcome } = await deferredPrompt.userChoice;
     if (outcome === "accepted") {
       setDeferredPrompt(null);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch (error) {
+      console.error("Logout failed:", error);
     }
   };
 
@@ -75,18 +86,36 @@ function Navbar() {
         </button>
 
         <div className="hidden items-center gap-2 lg:flex">
-          <NavLink to="/" className={navItemClass}>
-            Home
-          </NavLink>
-          <NavLink to="/learn" className={navItemClass}>
-            Learn
-          </NavLink>
-          <NavLink to="/draw" className={navItemClass}>
-            Draw
-          </NavLink>
-          <NavLink to="/profile" className={navItemClass}>
-            Progress
-          </NavLink>
+          {state.user ? (
+            <>
+              <span className="text-sm text-slate-600">
+                Hi, {state.user.displayName || "Learner"}!
+              </span>
+              <NavLink to="/" className={navItemClass}>
+                Home
+              </NavLink>
+              <NavLink to="/learn" className={navItemClass}>
+                Learn
+              </NavLink>
+              <NavLink to="/draw" className={navItemClass}>
+                Draw
+              </NavLink>
+              <NavLink to="/profile" className={navItemClass}>
+                Progress
+              </NavLink>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={handleLogout}
+              >
+                Logout
+              </button>
+            </>
+          ) : (
+            <NavLink to="/login" className={navItemClass}>
+              Login
+            </NavLink>
+          )}
         </div>
 
         <button
@@ -103,34 +132,59 @@ function Navbar() {
       {isMenuOpen && (
         <div className="border-t border-base-300 bg-base-100 px-4 py-2 lg:hidden">
           <div className="flex flex-col gap-2">
-            <NavLink
-              to="/"
-              className={navItemClass}
-              onClick={() => setIsMenuOpen(false)}
-            >
-              Home
-            </NavLink>
-            <NavLink
-              to="/learn"
-              className={navItemClass}
-              onClick={() => setIsMenuOpen(false)}
-            >
-              Learn
-            </NavLink>
-            <NavLink
-              to="/draw"
-              className={navItemClass}
-              onClick={() => setIsMenuOpen(false)}
-            >
-              Draw
-            </NavLink>
-            <NavLink
-              to="/profile"
-              className={navItemClass}
-              onClick={() => setIsMenuOpen(false)}
-            >
-              Progress
-            </NavLink>
+            {state.user ? (
+              <>
+                <div className="text-sm text-slate-600 py-2">
+                  Hi, {state.user.displayName || "Learner"}!
+                </div>
+                <NavLink
+                  to="/"
+                  className={navItemClass}
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  Home
+                </NavLink>
+                <NavLink
+                  to="/learn"
+                  className={navItemClass}
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  Learn
+                </NavLink>
+                <NavLink
+                  to="/draw"
+                  className={navItemClass}
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  Draw
+                </NavLink>
+                <NavLink
+                  to="/profile"
+                  className={navItemClass}
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  Progress
+                </NavLink>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm mt-2"
+                  onClick={() => {
+                    handleLogout();
+                    setIsMenuOpen(false);
+                  }}
+                >
+                  Logout
+                </button>
+              </>
+            ) : (
+              <NavLink
+                to="/login"
+                className={navItemClass}
+                onClick={() => setIsMenuOpen(false)}
+              >
+                Login
+              </NavLink>
+            )}
             <button
               type="button"
               className="btn btn-primary btn-sm mt-2 flex items-center gap-2"

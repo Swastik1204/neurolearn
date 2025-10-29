@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Navigate } from "react-router-dom";
 import ProgressDashboard from "../components/ProgressDashboard.jsx";
 import { listEmotionLogs } from "../firebase/db.js";
 import { useAppContext } from "../context/AppContext.jsx";
@@ -7,6 +8,11 @@ function Profile() {
   const {
     state: { user },
   } = useAppContext();
+
+  // Redirect to login if not authenticated
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
 

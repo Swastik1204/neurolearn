@@ -4,6 +4,7 @@ import Home from "./pages/Home.jsx";
 import Learn from "./pages/Learn.jsx";
 import Draw from "./pages/Draw.jsx";
 import Profile from "./pages/Profile.jsx";
+import Login from "./pages/Login.jsx";
 
 function App() {
   return (
@@ -15,6 +16,7 @@ function App() {
           <Route path="/learn" element={<Learn />} />
           <Route path="/draw" element={<Draw />} />
           <Route path="/profile" element={<Profile />} />
+          <Route path="/login" element={<Login />} />
         </Routes>
       </main>
     </div>
