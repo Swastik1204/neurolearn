@@ -8,7 +8,6 @@ import { useAppContext } from "../context/AppContext.jsx";
 function Navbar() {
   const { state } = useAppContext();
   const [deferredPrompt, setDeferredPrompt] = useState(null);
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   useEffect(() => {
     const handler = (event) => {
@@ -39,168 +38,71 @@ function Navbar() {
     }
   };
 
-  const navItemClass = ({ isActive }) =>
-    `btn btn-ghost btn-sm normal-case font-semibold ${
-      isActive ? "text-primary" : "text-slate-600"
-    }`;
-
   return (
-    <nav className="border-b border-base-300 bg-base-100/80 backdrop-blur">
-      <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-3 lg:px-8">
-        <Link to="/" className="flex items-center gap-2 text-lg font-bold">
-          <span className="grid h-10 w-10 place-items-center rounded-full bg-primary text-primary-content">
-            <FaBrain size={22} />
-          </span>
-          <div className="leading-tight">
-            <p>NeuroLearn</p>
-            <p className="text-xs font-normal text-slate-500">
-              Adaptive AI tutor for bright minds
-            </p>
-          </div>
+    <div className="navbar bg-base-100 shadow-sm">
+      <div className="navbar-start">
+        <div className="dropdown">
+          <label tabIndex={0} className="btn btn-ghost lg:hidden">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h8m-8 6h16" />
+            </svg>
+          </label>
+          <ul tabIndex={0} className="menu menu-sm dropdown-content mt-3 z-[1] p-2 shadow bg-base-100 rounded-box w-52">
+            {state.user ? (
+              <>
+                <li className="menu-title">
+                  <span>Hi, {state.user.displayName || "Learner"}!</span>
+                </li>
+                <li><NavLink to="/">Home</NavLink></li>
+                <li><NavLink to="/learn">Learn</NavLink></li>
+                <li><NavLink to="/draw">Draw</NavLink></li>
+                <li><NavLink to="/profile">Progress</NavLink></li>
+                <li><button onClick={handleLogout}>Logout</button></li>
+              </>
+            ) : (
+              <li><NavLink to="/login">Login</NavLink></li>
+            )}
+            <li><button onClick={handleInstallClick} disabled={!deferredPrompt} className="flex items-center gap-2">
+              <HiMiniSparkles size={16} />
+              Install App
+            </button></li>
+          </ul>
+        </div>
+        <Link to="/" className="btn btn-ghost normal-case text-xl">
+          <FaBrain className="text-primary" />
+          NeuroLearn
         </Link>
+      </div>
 
-        <button
-          type="button"
-          className="btn btn-ghost btn-circle lg:hidden"
-          onClick={() => setIsMenuOpen((open) => !open)}
-          aria-label="Toggle menu"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
-            viewBox="0 0 24 24"
-            strokeWidth="1.5"
-            stroke="currentColor"
-            className="h-6 w-6"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d={
-                isMenuOpen
-                  ? "M6 18L18 6M6 6l12 12"
-                  : "M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"
-              }
-            />
-          </svg>
-        </button>
-
-        <div className="hidden items-center gap-2 lg:flex">
+      <div className="navbar-center hidden lg:flex">
+        <ul className="menu menu-horizontal px-1">
           {state.user ? (
             <>
-              <span className="text-sm text-slate-600">
-                Hi, {state.user.displayName || "Learner"}!
-              </span>
-              <NavLink to="/" className={navItemClass}>
-                Home
-              </NavLink>
-              <NavLink to="/learn" className={navItemClass}>
-                Learn
-              </NavLink>
-              <NavLink to="/draw" className={navItemClass}>
-                Draw
-              </NavLink>
-              <NavLink to="/profile" className={navItemClass}>
-                Progress
-              </NavLink>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                onClick={handleLogout}
-              >
-                Logout
-              </button>
+              <li><span className="text-sm">Hi, {state.user.displayName || "Learner"}!</span></li>
+              <li><NavLink to="/">Home</NavLink></li>
+              <li><NavLink to="/learn">Learn</NavLink></li>
+              <li><NavLink to="/draw">Draw</NavLink></li>
+              <li><NavLink to="/profile">Progress</NavLink></li>
+              <li><button onClick={handleLogout} className="btn btn-ghost">Logout</button></li>
             </>
           ) : (
-            <NavLink to="/login" className={navItemClass}>
-              Login
-            </NavLink>
+            <li><NavLink to="/login">Login</NavLink></li>
           )}
-        </div>
+        </ul>
+      </div>
 
+      <div className="navbar-end">
         <button
           type="button"
-          className="btn btn-primary btn-sm hidden items-center gap-2 lg:flex"
+          className="btn btn-primary btn-sm hidden lg:flex items-center gap-2"
           disabled={!deferredPrompt}
           onClick={handleInstallClick}
         >
-          <HiMiniSparkles size={18} />
+          <HiMiniSparkles size={16} />
           Install App
         </button>
       </div>
-
-      {isMenuOpen && (
-        <div className="border-t border-base-300 bg-base-100 px-4 py-2 lg:hidden">
-          <div className="flex flex-col gap-2">
-            {state.user ? (
-              <>
-                <div className="text-sm text-slate-600 py-2">
-                  Hi, {state.user.displayName || "Learner"}!
-                </div>
-                <NavLink
-                  to="/"
-                  className={navItemClass}
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  Home
-                </NavLink>
-                <NavLink
-                  to="/learn"
-                  className={navItemClass}
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  Learn
-                </NavLink>
-                <NavLink
-                  to="/draw"
-                  className={navItemClass}
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  Draw
-                </NavLink>
-                <NavLink
-                  to="/profile"
-                  className={navItemClass}
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  Progress
-                </NavLink>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm mt-2"
-                  onClick={() => {
-                    handleLogout();
-                    setIsMenuOpen(false);
-                  }}
-                >
-                  Logout
-                </button>
-              </>
-            ) : (
-              <NavLink
-                to="/login"
-                className={navItemClass}
-                onClick={() => setIsMenuOpen(false)}
-              >
-                Login
-              </NavLink>
-            )}
-            <button
-              type="button"
-              className="btn btn-primary btn-sm mt-2 flex items-center gap-2"
-              disabled={!deferredPrompt}
-              onClick={() => {
-                handleInstallClick();
-                setIsMenuOpen(false);
-              }}
-            >
-              <HiMiniSparkles size={18} />
-              Install App
-            </button>
-          </div>
-        </div>
-      )}
-    </nav>
+    </div>
   );
 }
 
