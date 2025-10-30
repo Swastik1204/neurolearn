@@ -1,5 +1,7 @@
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import { BrowserRouter } from "react-router-dom";
 import { Routes, Route, Navigate } from "react-router-dom";
-import { useEffect } from "react";
 import Navbar from "./components/Navbar.jsx";
 import AuthModal from "./components/AuthModal.jsx";
 import FloatingInstallButton from "./components/FloatingInstallButton.jsx";
@@ -7,17 +9,24 @@ import Home from "./pages/Home.jsx";
 import Learn from "./pages/Learn.jsx";
 import Draw from "./pages/Draw.jsx";
 import Profile from "./pages/Profile.jsx";
-import { useAppContext } from "./context/AppContext.jsx";
+import { AppProvider, useAppContext } from "./context/AppContext.jsx";
+import "./App.css";
 
-function App() {
-  const { state, showAuthModal } = useAppContext();
+document.documentElement.setAttribute("data-theme", "neurolearn");
 
-  // Global auth guard - show modal if user tries to access protected routes without authentication
-  useEffect(() => {
-    if (!state.user && (window.location.pathname === '/learn' || window.location.pathname === '/draw' || window.location.pathname === '/profile')) {
-      showAuthModal();
-    }
-  }, [state.user, showAuthModal]);
+// Register the service worker to enable installable PWA behavior.
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker
+      .register("/service-worker.js")
+      .catch((error) =>
+        console.error("Service worker registration failed", error)
+      );
+  });
+}
+
+function AppContent() {
+  const { state } = useAppContext();
 
   return (
     <div className="min-h-screen bg-base-200 text-base-content">
@@ -27,9 +36,9 @@ function App() {
       <main className="mx-auto w-full max-w-6xl px-4 pb-16 pt-8 lg:px-8">
         <Routes>
           <Route path="/" element={<Home />} />
-          <Route path="/learn" element={state.user ? <Learn /> : null} />
-          <Route path="/draw" element={state.user ? <Draw /> : null} />
-          <Route path="/profile" element={state.user ? <Profile /> : null} />
+          <Route path="/learn" element={state.user ? <Learn /> : <Navigate to="/" replace />} />
+          <Route path="/draw" element={state.user ? <Draw /> : <Navigate to="/" replace />} />
+          <Route path="/profile" element={state.user ? <Profile /> : <Navigate to="/" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
@@ -37,4 +46,21 @@ function App() {
   );
 }
 
+function App() {
+  return (
+    <StrictMode>
+      <BrowserRouter>
+        <AppProvider>
+          <AppContent />
+        </AppProvider>
+      </BrowserRouter>
+    </StrictMode>
+  );
+}
+
 export default App;
+
+// Initialize the app
+const rootElement = document.getElementById("root");
+const root = createRoot(rootElement);
+root.render(<App />);
