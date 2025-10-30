@@ -4,6 +4,9 @@ import { onAuthStateChanged } from "../firebase/auth.js";
 
 const initialState = {
   user: null,
+  authModal: {
+    isOpen: false,
+  },
   session: {
     activeLessonId: null,
     lastUpdated: null,
@@ -27,6 +30,22 @@ function appReducer(state, action) {
       return {
         ...state,
         user: action.payload,
+      };
+    case "SHOW_AUTH_MODAL":
+      return {
+        ...state,
+        authModal: {
+          ...state.authModal,
+          isOpen: true,
+        },
+      };
+    case "HIDE_AUTH_MODAL":
+      return {
+        ...state,
+        authModal: {
+          ...state.authModal,
+          isOpen: false,
+        },
       };
     case "SET_SESSION":
       return {
@@ -92,6 +111,8 @@ export function AppProvider({ children }) {
     () => ({
       state,
       setUser: (user) => dispatch({ type: "SET_USER", payload: user }),
+      showAuthModal: () => dispatch({ type: "SHOW_AUTH_MODAL" }),
+      hideAuthModal: () => dispatch({ type: "HIDE_AUTH_MODAL" }),
       updateSession: (payload) => dispatch({ type: "SET_SESSION", payload }),
       updateEmotion: (payload) => dispatch({ type: "UPDATE_EMOTION", payload }),
       updatePerformance: (payload) =>

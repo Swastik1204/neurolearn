@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { FaBrain } from "react-icons/fa";
-import { login, registerChild } from "../firebase/auth.js";
+import { FcGoogle } from "react-icons/fc";
+import { login, registerChild, loginWithGoogle } from "../firebase/auth.js";
 import { createUserProfile } from "../firebase/db.js";
 import { useAppContext } from "../context/AppContext.jsx";
 
-function AuthModal({ isOpen, onClose }) {
-  const { setUser } = useAppContext();
+function AuthModal() {
+  const { state, setUser, hideAuthModal } = useAppContext();
   const [isLogin, setIsLogin] = useState(true);
   const [formData, setFormData] = useState({
     email: "",
@@ -51,7 +52,7 @@ function AuthModal({ isOpen, onClose }) {
       // Reset form and close modal
       setFormData({ email: "", password: "", displayName: "" });
       setError("");
-      onClose();
+      hideAuthModal();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -72,7 +73,36 @@ function AuthModal({ isOpen, onClose }) {
     setFormData({ email: "", password: "", displayName: "" });
   };
 
-  if (!isOpen) return null;
+  const handleGoogleLogin = async () => {
+    setError("");
+    setLoading(true);
+
+    try {
+      const user = await loginWithGoogle();
+
+      // Create user profile in Firestore if it's a new user
+      await createUserProfile(user.uid, {
+        name: user.displayName || "Google User",
+        learningStyle: "visual",
+        progressId: user.uid,
+      });
+
+      setUser({
+        uid: user.uid,
+        email: user.email,
+        displayName: user.displayName,
+        photoURL: user.photoURL,
+      });
+
+      hideAuthModal();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!state.authModal.isOpen) return null;
 
   return (
     <div className="modal modal-open">
@@ -160,6 +190,16 @@ function AuthModal({ isOpen, onClose }) {
 
         <button
           type="button"
+          className="btn btn-outline w-full mb-3 flex items-center justify-center gap-2"
+          onClick={handleGoogleLogin}
+          disabled={loading}
+        >
+          <FcGoogle size={20} />
+          {isLogin ? "Sign in with Google" : "Sign up with Google"}
+        </button>
+
+        <button
+          type="button"
           className="btn btn-outline w-full"
           onClick={switchMode}
         >
@@ -167,7 +207,7 @@ function AuthModal({ isOpen, onClose }) {
         </button>
 
         <div className="modal-action">
-          <button className="btn btn-ghost" onClick={onClose}>
+          <button className="btn btn-ghost" onClick={hideAuthModal}>
             Cancel
           </button>
         </div>

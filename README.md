@@ -115,7 +115,9 @@ neurolearn/
 │   │   ├── Learn.jsx          # Lesson interface
 │   │   ├── Draw.jsx           # Drawing practice
 │   │   ├── Profile.jsx        # Progress tracking
-│   │   └── Login.jsx          # Authentication
+│   │   ├── Navbar.jsx         # Navigation with auth modal
+│   │   ├── AuthModal.jsx      # Global authentication modal
+│   │   └── AuthGuard.jsx      # Route protection component
 │   ├── utils/                 # Utility functions
 │   │   ├── genAI.js           # AI integration
 │   │   ├── emotionAnalysis.js # ML analysis
@@ -131,7 +133,7 @@ neurolearn/
 ## 🎯 Usage
 
 ### For Learners
-1. **Sign Up**: Create an account with email and age
+1. **Sign Up**: Create an account with email and display name
 2. **Home Dashboard**: View personalized lessons and emotional insights
 3. **Learn**: Engage with AI-generated educational content
 4. **Draw**: Practice handwriting with real-time feedback
@@ -159,7 +161,8 @@ neurolearn/
 5. **Data Persistence** → Firebase stores progress and sessions
 
 ### Security
-- **Authentication**: Firebase Auth with email/password
+- **Authentication**: Firebase Auth with email/password and global modal system
+- **Route Protection**: AuthGuard component for automatic authentication checks
 - **Data Privacy**: User-scoped database access
 - **Secure Storage**: Encrypted file uploads
 - **API Security**: Environment-based API key management

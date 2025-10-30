@@ -1,34 +1,10 @@
-import { useEffect, useState } from "react";
 import { Link, NavLink } from "react-router-dom";
 import { FaBrain } from "react-icons/fa";
-import { HiMiniSparkles } from "react-icons/hi2";
 import { logout } from "../firebase/auth.js";
 import { useAppContext } from "../context/AppContext.jsx";
 
 function Navbar() {
-  const { state } = useAppContext();
-  const [deferredPrompt, setDeferredPrompt] = useState(null);
-
-  useEffect(() => {
-    const handler = (event) => {
-      event.preventDefault();
-      setDeferredPrompt(event);
-    };
-
-    window.addEventListener("beforeinstallprompt", handler);
-    return () => {
-      window.removeEventListener("beforeinstallprompt", handler);
-    };
-  }, []);
-
-  const handleInstallClick = async () => {
-    if (!deferredPrompt) return;
-    deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    if (outcome === "accepted") {
-      setDeferredPrompt(null);
-    }
-  };
+  const { state, showAuthModal } = useAppContext();
 
   const handleLogout = async () => {
     try {
@@ -59,13 +35,7 @@ function Navbar() {
                 <li><NavLink to="/profile">Progress</NavLink></li>
                 <li><button onClick={handleLogout}>Logout</button></li>
               </>
-            ) : (
-              <li><NavLink to="/login">Login</NavLink></li>
-            )}
-            <li><button onClick={handleInstallClick} disabled={!deferredPrompt} className="flex items-center gap-2">
-              <HiMiniSparkles size={16} />
-              Install App
-            </button></li>
+            ) : null}
           </ul>
         </div>
         <Link to="/" className="btn btn-ghost normal-case text-xl">
@@ -85,22 +55,31 @@ function Navbar() {
               <li><NavLink to="/profile">Progress</NavLink></li>
               <li><button onClick={handleLogout} className="btn btn-ghost">Logout</button></li>
             </>
-          ) : (
-            <li><NavLink to="/login">Login</NavLink></li>
-          )}
+          ) : null}
         </ul>
       </div>
 
       <div className="navbar-end">
-        <button
-          type="button"
-          className="btn btn-primary btn-sm hidden lg:flex items-center gap-2"
-          disabled={!deferredPrompt}
-          onClick={handleInstallClick}
-        >
-          <HiMiniSparkles size={16} />
-          Install App
-        </button>
+        {state.user ? (
+          <div className="dropdown dropdown-end">
+            <div tabIndex={0} role="button" className="btn btn-ghost btn-circle avatar placeholder">
+              <div className="bg-primary text-primary-content rounded-full w-8">
+                <span className="text-sm font-bold">
+                  {(state.user.displayName || state.user.email || "U").charAt(0).toUpperCase()}
+                </span>
+              </div>
+            </div>
+            <ul tabIndex={0} className="menu menu-sm dropdown-content mt-3 z-[1] p-2 shadow bg-base-100 rounded-box w-52">
+              <li className="menu-title">
+                <span className="text-sm font-medium">{state.user.displayName || "Learner"}</span>
+              </li>
+              <li><NavLink to="/profile">Profile</NavLink></li>
+              <li><button onClick={handleLogout}>Logout</button></li>
+            </ul>
+          </div>
+        ) : (
+          <button onClick={showAuthModal} className="btn btn-primary">Login</button>
+        )}
       </div>
     </div>
   );
