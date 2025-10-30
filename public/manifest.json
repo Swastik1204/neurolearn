@@ -17,6 +17,18 @@
       "type": "image/svg+xml",
       "sizes": "any",
       "purpose": "any maskable"
+    },
+    {
+      "src": "/vite.svg",
+      "type": "image/svg+xml",
+      "sizes": "192x192",
+      "purpose": "any"
+    },
+    {
+      "src": "/vite.svg",
+      "type": "image/svg+xml",
+      "sizes": "512x512",
+      "purpose": "any"
     }
   ],
   "shortcuts": [
@@ -25,6 +37,18 @@
       "short_name": "Learn",
       "description": "Begin an adaptive learning session",
       "url": "/learn",
+      "icons": [
+        {
+          "src": "/vite.svg",
+          "sizes": "any"
+        }
+      ]
+    },
+    {
+      "name": "Practice Alphabet",
+      "short_name": "Alphabet",
+      "description": "Practice alphabet tracing",
+      "url": "/alphabet",
       "icons": [
         {
           "src": "/vite.svg",
@@ -55,20 +79,6 @@
           "sizes": "any"
         }
       ]
-    }
-  ],
-  "screenshots": [
-    {
-      "src": "/screenshot-wide.png",
-      "sizes": "1280x720",
-      "type": "image/png",
-      "form_factor": "wide"
-    },
-    {
-      "src": "/screenshot-narrow.png",
-      "sizes": "750x1334",
-      "type": "image/png",
-      "form_factor": "narrow"
     }
   ]
 }

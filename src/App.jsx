@@ -9,6 +9,7 @@ import Home from "./pages/Home.jsx";
 import Learn from "./pages/Learn.jsx";
 import Draw from "./pages/Draw.jsx";
 import Profile from "./pages/Profile.jsx";
+import AlphabetLearn from "./pages/AlphabetLearn.jsx";
 import { AppProvider, useAppContext } from "./context/AppContext.jsx";
 import "./App.css";
 
@@ -39,6 +40,7 @@ function AppContent() {
           <Route path="/learn" element={state.user ? <Learn /> : <Navigate to="/" replace />} />
           <Route path="/draw" element={state.user ? <Draw /> : <Navigate to="/" replace />} />
           <Route path="/profile" element={state.user ? <Profile /> : <Navigate to="/" replace />} />
+          <Route path="/alphabet" element={state.user ? <AlphabetLearn /> : <Navigate to="/" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

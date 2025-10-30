@@ -69,4 +69,21 @@ export async function updateLessonProgress({ userId, lessonId, payload }) {
   })
 }
 
+export async function saveAlphabetSession(sessionData) {
+  const sessionRef = collection(db, 'sessions')
+  await addDoc(sessionRef, {
+    ...sessionData,
+    timestamp: serverTimestamp(),
+  })
+}
+
+export async function uploadAlphabetCSV(userId, letter, csvContent) {
+  const sessionId = `session_${Date.now()}`
+  const storageRef = ref(storage, `users/${userId}/letters/${letter}/${sessionId}.csv`)
+  await uploadString(storageRef, csvContent, 'raw', {
+    contentType: 'text/csv',
+  })
+  return storageRef.fullPath
+}
+
 export { db, storage }

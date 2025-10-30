@@ -31,6 +31,7 @@ function Navbar() {
                 </li>
                 <li><NavLink to="/">Home</NavLink></li>
                 <li><NavLink to="/learn">Learn</NavLink></li>
+                <li><NavLink to="/alphabet">Alphabet</NavLink></li>
                 <li><NavLink to="/draw">Draw</NavLink></li>
                 <li><NavLink to="/profile">Progress</NavLink></li>
                 <li><button onClick={handleLogout}>Logout</button></li>
@@ -51,6 +52,7 @@ function Navbar() {
               <li><span className="text-sm">Hi, {state.user.displayName || "Learner"}!</span></li>
               <li><NavLink to="/">Home</NavLink></li>
               <li><NavLink to="/learn">Learn</NavLink></li>
+              <li><NavLink to="/alphabet">Alphabet</NavLink></li>
               <li><NavLink to="/draw">Draw</NavLink></li>
               <li><NavLink to="/profile">Progress</NavLink></li>
               <li><button onClick={handleLogout} className="btn btn-ghost">Logout</button></li>
