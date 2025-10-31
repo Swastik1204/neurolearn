@@ -36,9 +36,18 @@ function AppContent() {
       <main className="mx-auto w-full max-w-6xl px-4 pb-16 pt-8 lg:px-8">
         <Routes>
           <Route path="/" element={<Home />} />
-          <Route path="/learn" element={state.user ? <Learn /> : <Navigate to="/" replace />} />
-          <Route path="/draw" element={state.user ? <Draw /> : <Navigate to="/" replace />} />
-          <Route path="/profile" element={state.user ? <Profile /> : <Navigate to="/" replace />} />
+          <Route
+            path="/learn"
+            element={state.user ? <Learn /> : <Navigate to="/" replace />}
+          />
+          <Route
+            path="/draw"
+            element={state.user ? <Draw /> : <Navigate to="/" replace />}
+          />
+          <Route
+            path="/profile"
+            element={state.user ? <Profile /> : <Navigate to="/" replace />}
+          />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

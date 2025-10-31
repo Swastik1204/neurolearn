@@ -4,25 +4,27 @@
 
 :root {
   color-scheme: light;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  background-color: #f5f5ff;
-  color: #1e1e2f;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  --app-brightness: 1;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
-  background-color: #f1f5ff;
-  color: #1f2933;
+  background-color: hsl(var(--b2));
+  color: hsl(var(--bc));
+  filter: brightness(var(--app-brightness, 1));
+  transition: filter 0.25s ease;
 }
 
 a {
-  color: #6366f1;
+  color: hsl(var(--p));
   transition: color 0.2s ease;
 }
 
 a:hover {
-  color: #4338ca;
+  color: hsl(var(--pf));
 }
 
 .scrollbar-soft {
@@ -45,10 +47,13 @@ a:hover {
 }
 
 @keyframes heartbeat {
-  0%, 50%, 100% {
+  0%,
+  50%,
+  100% {
     transform: scale(1);
   }
-  25%, 75% {
+  25%,
+  75% {
     transform: scale(1.1);
   }
 }

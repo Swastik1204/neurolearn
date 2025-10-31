@@ -1,11 +1,22 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useContext, useMemo, useReducer, useEffect } from "react";
+import {
+  createContext,
+  useContext,
+  useMemo,
+  useReducer,
+  useEffect,
+} from "react";
 import { onAuthStateChanged } from "../firebase/auth.js";
+import { DEFAULT_THEME_ID, isKnownTheme } from "../utils/themes.js";
 
 const initialState = {
   user: null,
   authModal: {
     isOpen: false,
+  },
+  preferences: {
+    theme: DEFAULT_THEME_ID,
+    brightness: 100,
   },
   session: {
     activeLessonId: null,
@@ -55,6 +66,22 @@ function appReducer(state, action) {
           ...action.payload,
         },
       };
+    case "SET_THEME":
+      return {
+        ...state,
+        preferences: {
+          ...state.preferences,
+          theme: action.payload,
+        },
+      };
+    case "SET_BRIGHTNESS":
+      return {
+        ...state,
+        preferences: {
+          ...state.preferences,
+          brightness: action.payload,
+        },
+      };
     case "UPDATE_EMOTION":
       return {
         ...state,
@@ -84,7 +111,40 @@ function appReducer(state, action) {
 const AppContext = createContext(undefined);
 
 export function AppProvider({ children }) {
-  const [state, dispatch] = useReducer(appReducer, initialState);
+  const [state, dispatch] = useReducer(appReducer, initialState, (state) => {
+    if (typeof window === "undefined") {
+      return state;
+    }
+
+    try {
+      const stored = window.localStorage.getItem("neurolearn:preferences");
+      if (!stored) {
+        return state;
+      }
+
+      const parsed = JSON.parse(stored);
+      if (typeof parsed !== "object" || parsed === null) {
+        return state;
+      }
+
+      const nextPreferences = {
+        ...state.preferences,
+        ...parsed,
+      };
+
+      if (!isKnownTheme(nextPreferences.theme)) {
+        nextPreferences.theme = DEFAULT_THEME_ID;
+      }
+
+      return {
+        ...state,
+        preferences: nextPreferences,
+      };
+    } catch (error) {
+      console.warn("Failed to read stored preferences", error);
+      return state;
+    }
+  });
 
   // Listen to auth state changes
   useEffect(() => {
@@ -106,6 +166,53 @@ export function AppProvider({ children }) {
     return unsubscribe;
   }, []);
 
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return;
+    }
+
+    const nextTheme = isKnownTheme(state.preferences.theme)
+      ? state.preferences.theme
+      : DEFAULT_THEME_ID;
+
+    if (!isKnownTheme(state.preferences.theme)) {
+      dispatch({ type: "SET_THEME", payload: nextTheme });
+      return;
+    }
+
+    document.documentElement.setAttribute("data-theme", nextTheme);
+  }, [state.preferences.theme]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return;
+    }
+
+    const normalized = Math.min(
+      1.4,
+      Math.max(0.6, state.preferences.brightness / 100)
+    );
+    document.documentElement.style.setProperty(
+      "--app-brightness",
+      normalized.toString()
+    );
+  }, [state.preferences.brightness]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(
+        "neurolearn:preferences",
+        JSON.stringify(state.preferences)
+      );
+    } catch (error) {
+      console.warn("Failed to persist preferences", error);
+    }
+  }, [state.preferences]);
+
   // Expose memoised actions for components to interact with global state.
   const value = useMemo(
     () => ({
@@ -119,6 +226,16 @@ export function AppProvider({ children }) {
         dispatch({ type: "UPDATE_PERFORMANCE", payload }),
       setLessonQueue: (lessons) =>
         dispatch({ type: "SET_LESSON_QUEUE", payload: lessons }),
+      setTheme: (theme) =>
+        dispatch({
+          type: "SET_THEME",
+          payload: isKnownTheme(theme) ? theme : DEFAULT_THEME_ID,
+        }),
+      setBrightness: (value) =>
+        dispatch({
+          type: "SET_BRIGHTNESS",
+          payload: Math.round(Math.min(140, Math.max(60, value))),
+        }),
     }),
     [state]
   );

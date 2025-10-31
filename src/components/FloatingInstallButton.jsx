@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { FiDownload } from "react-icons/fi";
 
-function FloatingInstallButton() {
+export default function FloatingInstallButton() {
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [isInstalled, setIsInstalled] = useState(false);
 
@@ -9,7 +9,9 @@ function FloatingInstallButton() {
     // Check if app is already installed
     const checkIfInstalled = () => {
       // Check if running in standalone mode (PWA)
-      const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
+      const isStandalone = window.matchMedia(
+        "(display-mode: standalone)"
+      ).matches;
       // Check if running as PWA on iOS
       const isIOSPWA = window.navigator.standalone === true;
       // Check if installed via beforeinstallprompt
@@ -63,6 +65,7 @@ function FloatingInstallButton() {
 
   return (
     <button
+      type="button"
       onClick={handleInstallClick}
       className="fixed bottom-6 right-6 btn btn-primary shadow-lg z-50 heartbeat-animation hover:scale-110 transition-transform flex items-center gap-2 px-4"
       title="Install NeuroLearn App"
@@ -72,5 +75,3 @@ function FloatingInstallButton() {
     </button>
   );
 }
-
-export default FloatingInstallButton;
