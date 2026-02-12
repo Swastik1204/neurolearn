@@ -2,29 +2,43 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  color-scheme: light;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  background-color: #f5f5ff;
-  color: #1e1e2f;
+@layer utilities {
+  .glass-panel {
+    background: rgba(255, 255, 255, 0.7);
+    -webkit-backdrop-filter: blur(24px);
+    backdrop-filter: blur(24px);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+  }
+
+  .glass-button {
+    background: rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    transition: all 0.3s ease;
+  }
+
+  .glass-button:hover {
+    background: rgba(255, 255, 255, 0.4);
+  }
+
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-[#6366f1] via-[#8b5cf6] to-[#f472b6];
+  }
 }
 
+/* ── Global body gradient ── */
 body {
   margin: 0;
   min-height: 100vh;
-  background-color: #f1f5ff;
-  color: #1f2933;
+  background: linear-gradient(135deg, #e0e7ff 0%, #f3e8ff 50%, #fce7f3 100%);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-a {
-  color: #6366f1;
-  transition: color 0.2s ease;
-}
-
-a:hover {
-  color: #4338ca;
-}
-
+/* ── Scrollbar ── */
 .scrollbar-soft {
   scrollbar-width: thin;
   scrollbar-color: #6366f1 transparent;
@@ -40,19 +54,65 @@ a:hover {
   border-radius: 9999px;
 }
 
+/* ── Circular SVG charts ── */
+.circular-chart {
+  display: block;
+  margin: 0 auto;
+  max-width: 100%;
+  max-height: 250px;
+}
+
+.circle-bg {
+  fill: none;
+  stroke: rgba(148, 163, 184, 0.2);
+  stroke-width: 2.8;
+}
+
+.circle {
+  fill: none;
+  stroke-width: 2.8;
+  stroke-linecap: round;
+  animation: progress 1s ease-out forwards;
+}
+
+@keyframes progress {
+  0% {
+    stroke-dasharray: 0 100;
+  }
+}
+
+.percentage {
+  fill: currentColor;
+  font-family: 'Inter', sans-serif;
+  font-weight: bold;
+  font-size: 0.5em;
+  text-anchor: middle;
+}
+
+/* ── Misc ── */
 .card-glow {
   box-shadow: 0 8px 30px rgba(99, 102, 241, 0.15);
 }
 
 @keyframes heartbeat {
-  0%, 50%, 100% {
+
+  0%,
+  50%,
+  100% {
     transform: scale(1);
   }
-  25%, 75% {
+
+  25%,
+  75% {
     transform: scale(1.1);
   }
 }
 
 .heartbeat-animation {
   animation: heartbeat 2s ease-in-out infinite;
+}
+
+a {
+  color: inherit;
+  text-decoration: inherit;
 }

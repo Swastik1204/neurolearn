@@ -1,14 +1,19 @@
 import * as tf from '@tensorflow/tfjs'
+import logger from '../debug/logger.js'
+
+const log = logger.create('emotionAnalysis')
 
 let cachedModel
 
 export async function loadEmotionModel(modelUrl = '/models/stroke-emotion/model.json') {
   if (cachedModel) return cachedModel
   try {
+    log.info('Loading TensorFlow.js emotion model', modelUrl)
     cachedModel = await tf.loadLayersModel(modelUrl)
+    log.info('Emotion model loaded successfully')
     return cachedModel
   } catch (error) {
-    console.error('[emotionAnalysis] Failed to load TensorFlow.js model', error)
+    log.error('Failed to load TensorFlow.js model', error)
     return null
   }
 }
@@ -35,6 +40,7 @@ function normaliseStroke(stroke) {
 
 export async function analyseStrokeEmotion(strokes) {
   if (!strokes || strokes.length === 0) {
+    log.debug('No strokes provided, returning default emotion')
     return {
       frustration: 0.2,
       confidence: 0.6,
@@ -48,9 +54,12 @@ export async function analyseStrokeEmotion(strokes) {
 
   try {
     if (!model) throw new Error('Model missing')
+    log.debug('Running emotion prediction on', strokes.length, 'strokes')
     const prediction = model.predict(tensor)
     const data = await prediction.data()
     const [frustration = 0.2, confidence = 0.6] = data
+
+    log.debug('Prediction result', { frustration, confidence })
 
     return {
       frustration,
@@ -61,7 +70,7 @@ export async function analyseStrokeEmotion(strokes) {
           : 'Great job! Introduce a slightly trickier curve challenge.',
     }
   } catch (error) {
-    console.warn('[emotionAnalysis] Falling back to heuristic scoring', error)
+    log.warn('Falling back to heuristic scoring', error)
     const fallback = features.reduce(
       (acc, [, duration, avgVelocity]) => {
         return {

@@ -1,3 +1,7 @@
+import logger from '../debug/logger.js'
+
+const log = logger.create('genAI')
+
 const DEFAULT_STORY = {
   title: 'The Curvy Letter C Adventure',
   story:
@@ -21,9 +25,11 @@ const DEFAULT_UPCOMING = [
  */
 async function callGenerativeApi({ prompt, provider = 'openai', apiKey }) {
   if (!apiKey) {
-    console.warn('[genAI] Missing API key. Returning fallback lesson.')
+    log.warn('Missing API key. Returning fallback lesson.')
     return DEFAULT_STORY
   }
+
+  log.info('Calling generative API', provider)
 
   const baseUrl =
     provider === 'openai'
@@ -40,13 +46,13 @@ async function callGenerativeApi({ prompt, provider = 'openai', apiKey }) {
   const body =
     provider === 'gemini'
       ? {
-          contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          safetySettings: [],
-        }
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        safetySettings: [],
+      }
       : {
-          model: provider === 'openai' ? 'gpt-4.1-mini' : undefined,
-          input: prompt,
-        }
+        model: provider === 'openai' ? 'gpt-4.1-mini' : undefined,
+        input: prompt,
+      }
 
   const response = await fetch(`${baseUrl}?key=${provider === 'gemini' ? apiKey : ''}`, {
     method: 'POST',
@@ -55,17 +61,21 @@ async function callGenerativeApi({ prompt, provider = 'openai', apiKey }) {
   })
 
   if (!response.ok) {
+    log.error('Generative API call failed', response.status, response.statusText)
     throw new Error('Generative API call failed')
   }
 
   await response.json()
   // TODO: Parse model-specific schema into the lesson format below.
+  log.debug('Generative API call succeeded, using default story for now')
   return DEFAULT_STORY
 }
 
 export async function generateAdaptiveLesson({ user, emotionState, performance }) {
   const apiKey = import.meta.env.VITE_GENAI_API_KEY
   const provider = import.meta.env.VITE_GENAI_PROVIDER || 'openai'
+
+  log.debug('generateAdaptiveLesson', { provider, mood: emotionState?.mood, target: performance?.target })
 
   const prompt = `Generate a playful literacy exercise for a ${user?.age || 7}-year-old child.
   The learner struggles with ${performance?.target || 'curved letters'} and currently feels ${emotionState?.mood || 'curious'}.
@@ -78,7 +88,7 @@ export async function generateAdaptiveLesson({ user, emotionState, performance }
       upcomingLessons: DEFAULT_UPCOMING,
     }
   } catch (error) {
-    console.error('[genAI] Falling back to default template', error)
+    log.error('Falling back to default template', error)
     return {
       lesson: DEFAULT_STORY,
       upcomingLessons: DEFAULT_UPCOMING,
@@ -88,6 +98,6 @@ export async function generateAdaptiveLesson({ user, emotionState, performance }
 
 export async function generateAlphabetVisual(letter) {
   // Placeholder for Replicate or image generation pipeline.
-  console.info('[genAI] Request to generate visual for letter:', letter)
+  log.info('Request to generate visual for letter:', letter)
   return { url: null }
 }

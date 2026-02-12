@@ -1,6 +1,10 @@
 // CSV Storage utility for Alphabet Learning sessions
 // Stores CSV data locally instead of downloading
 
+import logger from '../debug/logger.js'
+
+const log = logger.create('csvStorage')
+
 const CSV_STORAGE_KEY = 'neurolearn_alphabet_sessions';
 
 export function saveAlphabetSessionCSV(csvContent, letter, sessionId) {
@@ -26,10 +30,10 @@ export function saveAlphabetSessionCSV(csvContent, letter, sessionId) {
     // Store in localStorage
     localStorage.setItem(CSV_STORAGE_KEY, JSON.stringify(existingSessions));
 
-    console.log(`Session ${sessionId} saved locally for letter ${letter}`);
+    log.info(`Session ${sessionId} saved locally for letter ${letter}`);
     return true;
   } catch (error) {
-    console.error('Failed to save session CSV:', error);
+    log.error('Failed to save session CSV:', error);
     return false;
   }
 }
@@ -39,7 +43,7 @@ export function getStoredSessions() {
     const stored = localStorage.getItem(CSV_STORAGE_KEY);
     return stored ? JSON.parse(stored) : [];
   } catch (error) {
-    console.error('Failed to retrieve stored sessions:', error);
+    log.error('Failed to retrieve stored sessions:', error);
     return [];
   }
 }
@@ -55,6 +59,8 @@ export function exportAllSessions() {
     alert('No sessions to export');
     return;
   }
+
+  log.info('Exporting', sessions.length, 'sessions');
 
   // Create a combined CSV with session metadata
   const headers = ['session_id', 'letter', 'timestamp', 'csv_data'];
@@ -83,5 +89,5 @@ export function exportAllSessions() {
 
 export function clearAllSessions() {
   localStorage.removeItem(CSV_STORAGE_KEY);
-  console.log('All stored sessions cleared');
+  log.info('All stored sessions cleared');
 }

@@ -1,6 +1,9 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useMemo, useReducer, useEffect } from "react";
 import { onAuthStateChanged } from "../firebase/auth.js";
+import logger from "../debug/logger.js";
+
+const log = logger.create("AppContext");
 
 const initialState = {
   user: null,
@@ -84,9 +87,13 @@ function appReducer(state, action) {
 const AppContext = createContext(undefined);
 
 export function AppProvider({ children }) {
-  const [state, dispatch] = useReducer(appReducer, initialState);
+  const [state, rawDispatch] = useReducer(appReducer, initialState);
 
-  // Listen to auth state changes
+  // Wrap dispatch to log every action in dev mode
+  const dispatch = (action) => {
+    log.debug("dispatch", action.type, action.payload !== undefined ? action.payload : "");
+    rawDispatch(action);
+  };
   useEffect(() => {
     const unsubscribe = onAuthStateChanged((user) => {
       if (user) {

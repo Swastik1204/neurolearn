@@ -1,22 +1,28 @@
 import { useMemo } from "react";
-import { FiActivity, FiHeart, FiSmile } from "react-icons/fi";
 import { useAppContext } from "../context/AppContext.jsx";
 
-function EmotionBar({ label, value, color }) {
+function CircularChart({ value, label, colorClass }) {
+  const percentage = Math.round(value * 100);
   return (
-    <div>
-      <div className="mb-1 flex items-center justify-between text-sm text-slate-500">
-        <span>{label}</span>
-        <span className="font-semibold text-slate-600">
-          {Math.round(value * 100)}%
-        </span>
+    <div className="flex flex-col items-center gap-2">
+      <div className="relative w-20 h-20">
+        <svg className={`circular-chart ${colorClass}`} viewBox="0 0 36 36">
+          <path
+            className="circle-bg"
+            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+          />
+          <path
+            className="circle"
+            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+            stroke="currentColor"
+            strokeDasharray={`${percentage}, 100`}
+          />
+          <text className="percentage text-xs" x="18" y="20.35">
+            {percentage}%
+          </text>
+        </svg>
       </div>
-      <div className="h-3 w-full rounded-full bg-slate-200">
-        <div
-          className="h-3 rounded-full transition-all"
-          style={{ width: `${Math.round(value * 100)}%`, background: color }}
-        />
-      </div>
+      <span className="text-xs font-semibold text-slate-600">{label}</span>
     </div>
   );
 }
@@ -33,63 +39,72 @@ function EmotionVisualizer() {
     return "🙂";
   }, [emotionState.mood]);
 
+  const joyValue = emotionState.mood === "joyful" ? 0.9 : 0.5;
+
   return (
-    <section className="card-glow rounded-3xl bg-gradient-to-br from-indigo-100 via-white to-pink-100 p-6 shadow-lg">
-      <header className="flex items-center gap-3">
-        <span className="grid h-12 w-12 place-items-center rounded-2xl bg-primary/10 text-3xl">
+    <div className="glass-panel rounded-3xl p-8 sticky top-28 border border-white/60">
+      {/* ── Header ── */}
+      <div className="flex items-center gap-4 mb-8">
+        <div className="w-12 h-12 rounded-full bg-yellow-300 flex items-center justify-center text-2xl shadow-[0_0_15px_rgba(253,224,71,0.6)] animate-pulse">
           {emoji}
-        </span>
-        <div>
-          <p className="text-xs uppercase tracking-widest text-primary">
-            Emotional pulse
-          </p>
-          <h3 className="text-xl font-bold text-slate-800">
-            How are we feeling?
-          </h3>
         </div>
-      </header>
+        <div>
+          <span className="text-xs font-bold text-indigo-500 uppercase tracking-widest">
+            Emotional Pulse
+          </span>
+          <h2 className="text-xl font-bold text-slate-800">How we feeling?</h2>
+        </div>
+      </div>
 
-      <p className="mt-4 text-sm text-slate-600">
-        The AI monitors colour choices, stroke pressure, and optional webcam
-        cues to guess the current mood. This helps adapt lessons before
-        frustration builds up.
-      </p>
-
-      <div className="mt-4 grid gap-4">
-        <EmotionBar
-          label="Confidence"
+      {/* ── Circular Charts ── */}
+      <div className="grid grid-cols-3 gap-2 mb-8">
+        <CircularChart
           value={emotionState.confidence}
-          color="#6366f1"
+          label="Confidence"
+          colorClass="text-[#6366f1]"
         />
-        <EmotionBar
-          label="Energy"
+        <CircularChart
           value={emotionState.energy}
-          color="#f472b6"
+          label="Energy"
+          colorClass="text-[#f472b6]"
         />
-        <EmotionBar
+        <CircularChart
+          value={joyValue}
           label="Joy"
-          value={emotionState.mood === "joyful" ? 1 : 0.5}
-          color="#22d3ee"
+          colorClass="text-cyan-400"
         />
       </div>
 
-      <div className="mt-6 grid gap-3 text-sm text-slate-600">
-        <p className="flex items-center gap-2">
-          <FiSmile className="text-primary" />
-          Emotion inference runs locally with TensorFlow.js. The averaged score
-          is persisted to Firestore for parental review.
-        </p>
-        <p className="flex items-center gap-2">
-          <FiHeart className="text-secondary" />
-          Calm breathing or break prompts trigger when frustration exceeds the
-          configured threshold.
-        </p>
-        <p className="flex items-center gap-2">
-          <FiActivity className="text-accent" />
-          You can plug in webcam-based cues later by updating `firebase/ml.js`.
-        </p>
+      {/* ── Info Cards ── */}
+      <div className="space-y-4 bg-white/40 p-5 rounded-2xl backdrop-blur-md border border-white/40">
+        <div className="flex gap-4 items-start">
+          <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center shrink-0">
+            <span className="material-symbols-rounded text-indigo-500 text-sm">
+              smart_toy
+            </span>
+          </div>
+          <div>
+            <h4 className="text-sm font-bold text-slate-800">AI Inference</h4>
+            <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+              Privacy-first emotion detection running locally via TensorFlow.js.
+            </p>
+          </div>
+        </div>
+        <div className="flex gap-4 items-start">
+          <div className="w-8 h-8 rounded-full bg-pink-100 flex items-center justify-center shrink-0">
+            <span className="material-symbols-rounded text-pink-500 text-sm">
+              favorite
+            </span>
+          </div>
+          <div>
+            <h4 className="text-sm font-bold text-slate-800">Auto-Calm</h4>
+            <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+              Breathing exercises trigger automatically if frustration rises.
+            </p>
+          </div>
+        </div>
       </div>
-    </section>
+    </div>
   );
 }
 
