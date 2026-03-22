@@ -69,6 +69,7 @@ export default function Signup() {
 
   const createUserDocument = async (uid, name) => {
     const userData = {
+      uid: uid,
       role: selectedRole,
       displayName: name,
       email: email || auth.currentUser?.email,
@@ -81,7 +82,7 @@ export default function Signup() {
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
     setLoading(true);
     setError('');
 
@@ -166,7 +167,7 @@ export default function Signup() {
                 </div>
               )}
 
-              <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="space-y-4">
                 <div>
                   <label htmlFor="signup-name" className="block text-sm font-medium text-foreground mb-1.5">
                     Full name
@@ -219,7 +220,8 @@ export default function Signup() {
                 )}
 
                 <button
-                  type="submit"
+                  type="button"
+                  onClick={handleSubmit}
                   disabled={loading}
                   className="w-full py-3 px-4 rounded-lg gradient-primary text-white font-medium hover:opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-md hover:shadow-lg"
                 >
@@ -240,7 +242,7 @@ export default function Signup() {
                 >
                   ← Change role
                 </button>
-              </form>
+              </div>
             </>
           )}
 

@@ -18,7 +18,7 @@ export default function AssignExercise({ studentId, studentName, onClose, onAssi
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
     setSubmitting(true);
     try {
       await addDoc(collection(db, 'assignments'), {
@@ -52,7 +52,7 @@ export default function AssignExercise({ studentId, studentName, onClose, onAssi
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+        <div className="p-5 space-y-4">
           <div>
             <label htmlFor="exercise-type" className="block text-sm font-medium text-foreground mb-1.5">
               Exercise Type
@@ -108,14 +108,15 @@ export default function AssignExercise({ studentId, studentName, onClose, onAssi
               Cancel
             </button>
             <button
-              type="submit"
+              type="button"
+              onClick={handleSubmit}
               disabled={submitting}
               className="flex-1 py-3 px-4 rounded-lg gradient-primary text-white font-medium hover:opacity-90 transition-all disabled:opacity-50 shadow-md"
             >
               {submitting ? 'Assigning...' : 'Assign'}
             </button>
           </div>
-        </form>
+        </div>
       </div>
     </div>
   );

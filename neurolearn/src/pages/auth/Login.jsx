@@ -30,7 +30,7 @@ export default function Login() {
   };
 
   const handleEmailLogin = async (e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
     setLoading(true);
     setError('');
     try {
@@ -90,7 +90,7 @@ export default function Login() {
             </div>
           )}
 
-          <form onSubmit={handleEmailLogin} className="space-y-4">
+          <div className="space-y-4">
             <div>
               <label htmlFor="login-email" className="block text-sm font-medium text-foreground mb-1.5">
                 Email address
@@ -132,7 +132,8 @@ export default function Login() {
             </div>
 
             <button
-              type="submit"
+              type="button"
+              onClick={handleEmailLogin}
               disabled={loading}
               className="w-full py-3 px-4 rounded-lg gradient-primary text-white font-medium hover:opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-md hover:shadow-lg"
             >
@@ -145,7 +146,7 @@ export default function Login() {
                 </>
               )}
             </button>
-          </form>
+          </div>
 
           <div className="my-6 flex items-center gap-4">
             <div className="flex-1 h-px bg-border" />
