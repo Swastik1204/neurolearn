@@ -1,0 +1,147 @@
+@import "tailwindcss";
+
+@font-face {
+  font-family: 'OpenDyslexic';
+  src: url('https://cdn.jsdelivr.net/npm/open-dyslexic@1.0.3/woff/OpenDyslexic-Regular.woff') format('woff');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'OpenDyslexic';
+  src: url('https://cdn.jsdelivr.net/npm/open-dyslexic@1.0.3/woff/OpenDyslexic-Bold.woff') format('woff');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@theme inline {
+  --color-primary: #5B4FCF;
+  --color-primary-foreground: #FFFFFF;
+  --color-primary-light: #8B82E0;
+  --color-primary-dark: #3D339A;
+
+  --color-accent: #F4A728;
+  --color-accent-foreground: #1A1A1A;
+  --color-accent-light: #F7C16B;
+  --color-accent-dark: #D08B0E;
+
+  --color-background: #FAFAF7;
+  --color-foreground: #1A1A2E;
+  --color-card: #FFFFFF;
+  --color-card-foreground: #1A1A2E;
+  --color-popover: #FFFFFF;
+  --color-popover-foreground: #1A1A2E;
+  --color-muted: #F0EFE8;
+  --color-muted-foreground: #6B6B80;
+  --color-border: #E2E1D5;
+  --color-input: #E2E1D5;
+  --color-ring: #5B4FCF;
+
+  --color-destructive: #DC3545;
+  --color-destructive-foreground: #FFFFFF;
+
+  --color-success: #28A77A;
+  --color-success-foreground: #FFFFFF;
+  --color-warning: #F4A728;
+  --color-warning-foreground: #1A1A1A;
+  --color-info: #4E9FD5;
+  --color-info-foreground: #FFFFFF;
+
+  --color-risk-low: #28A77A;
+  --color-risk-medium: #F4A728;
+  --color-risk-high: #DC3545;
+
+  --color-sidebar: #F5F4EE;
+  --color-sidebar-foreground: #1A1A2E;
+  --color-sidebar-accent: #E8E7DD;
+
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-dyslexic: 'OpenDyslexic', 'Comic Sans MS', cursive;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-sans);
+  }
+
+  .student-view {
+    font-family: var(--font-dyslexic);
+    line-height: 1.8;
+    letter-spacing: 0.12em;
+  }
+
+  .student-view button,
+  .student-view a,
+  .student-view [role="button"] {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+@layer utilities {
+  .glass {
+    backdrop-filter: blur(12px);
+    background: rgba(255, 255, 255, 0.7);
+    border: 1px solid rgba(226, 225, 213, 0.5);
+  }
+
+  .gradient-primary {
+    background: linear-gradient(135deg, #5B4FCF 0%, #8B82E0 100%);
+  }
+
+  .gradient-accent {
+    background: linear-gradient(135deg, #F4A728 0%, #F7C16B 100%);
+  }
+
+  .gradient-hero {
+    background: linear-gradient(135deg, #5B4FCF 0%, #8B82E0 50%, #F4A728 100%);
+  }
+
+  .animate-fade-in {
+    animation: fadeIn 0.3s ease-out;
+  }
+
+  .animate-slide-up {
+    animation: slideUp 0.4s ease-out;
+  }
+
+  .animate-scale-in {
+    animation: scaleIn 0.2s ease-out;
+  }
+
+  .animate-pulse-gentle {
+    animation: pulseGentle 2s ease-in-out infinite;
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes pulseGentle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
