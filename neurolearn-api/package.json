@@ -1,8 +1,14 @@
 {
   "name": "neurolearn-api",
+  "description": "NeuroLearn API — Vercel Serverless Functions",
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "scripts": {
+    "dev": "vercel dev",
+    "deploy": "vercel --prod",
+    "lint": "eslint ."
+  },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "firebase-admin": "^12.0.0"
