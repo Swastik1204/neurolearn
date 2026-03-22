@@ -4,7 +4,7 @@ import { PenTool, BookOpen, Star, LogOut } from 'lucide-react';
 import { signOut } from 'firebase/auth';
 import { auth } from '@/services/firebase';
 import { useState } from 'react';
-import axios from 'axios';
+import api from '@/services/api';
 
 export default function StudentHome() {
   const { user } = useCurrentUser();
@@ -19,10 +19,8 @@ export default function StudentHome() {
     setLoading(true);
     try {
       // Safely proxy request to backend API to protect the Gemini Key
-      const idToken = await auth.currentUser.getIdToken();
-      const response = await axios.post('/api/generate-lesson', 
-        { topic: 'phonics', difficulty: 'easy', childName: user?.displayName || 'Student' },
-        { headers: { Authorization: `Bearer ${idToken}` } }
+      const response = await api.post('/api/generate-lesson', 
+        { topic: 'phonics', difficulty: 'easy', childName: user?.displayName || 'Student' }
       );
       setLessonText(response.data.lesson || "Lesson loaded successfully!");
     } catch (e) {
