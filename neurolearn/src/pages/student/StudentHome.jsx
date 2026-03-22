@@ -3,8 +3,8 @@ import useCurrentUser from '@/hooks/useCurrentUser';
 import { PenTool, BookOpen, Star, LogOut } from 'lucide-react';
 import { signOut } from 'firebase/auth';
 import { auth } from '@/services/firebase';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { useState } from 'react';
+import axios from 'axios';
 
 export default function StudentHome() {
   const { user } = useCurrentUser();
@@ -18,13 +18,15 @@ export default function StudentHome() {
   const testGemini = async () => {
     setLoading(true);
     try {
-      const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GENAI_API_KEY);
-      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-      const prompt = "You are a teacher. Write a 2 sentence encouraging message for a dyslexic student named " + (user?.displayName || "Student") + ".";
-      const result = await model.generateContent(prompt);
-      setLessonText(result.response.text());
+      // Safely proxy request to backend API to protect the Gemini Key
+      const idToken = await auth.currentUser.getIdToken();
+      const response = await axios.post('/api/generate-lesson', 
+        { topic: 'phonics', difficulty: 'easy', childName: user?.displayName || 'Student' },
+        { headers: { Authorization: `Bearer ${idToken}` } }
+      );
+      setLessonText(response.data.lesson || "Lesson loaded successfully!");
     } catch (e) {
-      setLessonText("Error generating lesson: " + e.message);
+      setLessonText("API Error: " + (e.response?.data?.error || e.message));
     } finally {
       setLoading(false);
     }
