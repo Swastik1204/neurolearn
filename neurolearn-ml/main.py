@@ -1,164 +1,250 @@
 """
-NeuroLearn ML Service — FastAPI Application
-
-Endpoints:
-- POST /analyze — Analyze a handwriting sample image
-- GET /health — Health check
+NeuroLearn ML Service — FastAPI
+Loads trained RandomForest + scaler on startup.
+Accepts handwriting images and returns forensic analysis scores.
 """
 
 import os
-import traceback
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from typing import Optional, Dict, Any
+import io
+import json
 import httpx
+import joblib
 import numpy as np
+import cv2
+from PIL import Image
+from pathlib import Path
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
-from preprocess import preprocess, load_image_from_bytes
-from segmentation import segment_characters
-from features import extract_features
-from classifier import get_classifier
+app = FastAPI(title="NeuroLearn ML Service", version="1.0.0")
 
-app = FastAPI(
-    title="NeuroLearn ML Service",
-    description="Handwriting analysis for dyslexia indicator detection",
-    version="1.0.0",
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-# Configuration
-VERCEL_WEBHOOK_URL = os.getenv("VERCEL_WEBHOOK_URL", "")
-ML_WEBHOOK_SECRET = os.getenv("ML_WEBHOOK_SECRET", "dev-secret")
+# ── Load models on startup ────────────────────────────────────────────────────
+MODELS_PATH = Path("models")
+rf_model = None
+scaler = None
+metadata = {}
 
+@app.on_event("startup")
+async def load_models():
+    global rf_model, scaler, metadata
+    try:
+        rf_model = joblib.load(MODELS_PATH / "dyslexia_classifier.pkl")
+        scaler = joblib.load(MODELS_PATH / "feature_scaler.pkl")
+        with open(MODELS_PATH / "model_metadata.json") as f:
+            metadata = json.load(f)
+        print(f"Models loaded — RF accuracy: {metadata.get('rf_accuracy', 'unknown')}")
+    except Exception as e:
+        print(f"Warning: Could not load models: {e}")
+        print("Service will run but analysis will return placeholder scores")
 
+# ── Request/Response models ───────────────────────────────────────────────────
 class AnalyzeRequest(BaseModel):
     image_url: str
     sample_id: str
-    stroke_metadata: Dict[str, Any] = {}
-
+    stroke_metadata: dict = {}
 
 class AnalyzeResponse(BaseModel):
     sample_id: str
-    status: str
-    scores: Optional[Dict[str, Any]] = None
-    indicators: Optional[Dict[str, Any]] = None
+    scores: dict
+    indicators: dict
+    risk_level: str
 
+# ── Image preprocessing (same as training) ────────────────────────────────────
+def preprocess_image_from_bytes(img_bytes):
+    nparr = np.frombuffer(img_bytes, np.uint8)
+    img = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
+    if img is None:
+        return None
+    _, binary = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    coords = np.column_stack(np.where(binary > 0))
+    if len(coords) < 10:
+        return cv2.resize(binary, (32, 32))
+    angle = cv2.minAreaRect(coords)[-1]
+    angle = -(90 + angle) if angle < -45 else -angle
+    (h, w) = binary.shape
+    M = cv2.getRotationMatrix2D((w//2, h//2), angle, 1.0)
+    deskewed = cv2.warpAffine(binary, M, (w, h), flags=cv2.INTER_CUBIC,
+                               borderMode=cv2.BORDER_REPLICATE)
+    kernel = np.ones((2, 2), np.uint8)
+    denoised = cv2.morphologyEx(deskewed, cv2.MORPH_OPEN, kernel)
+    return cv2.resize(denoised, (32, 32))
 
-class HealthResponse(BaseModel):
-    status: str
-    model_loaded: bool
+def extract_features(img):
+    """Same feature extraction as train.py."""
+    if img is None:
+        return None
+    features = []
+    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(img)
+    valid = [(i, stats[i]) for i in range(1, num_labels)
+             if 50 < stats[i][cv2.CC_STAT_AREA] < 2000]
+    if len(valid) < 2:
+        return [0.0] * 20
 
+    areas = [s[cv2.CC_STAT_AREA] for _, s in valid]
+    heights = [s[cv2.CC_STAT_HEIGHT] for _, s in valid]
+    widths = [s[cv2.CC_STAT_WIDTH] for _, s in valid]
+    x_pos = [s[cv2.CC_STAT_LEFT] for _, s in valid]
+    y_pos = [s[cv2.CC_STAT_TOP] for _, s in valid]
 
-@app.get("/health", response_model=HealthResponse)
+    features.append(np.std(heights) / (np.mean(heights) + 1e-6))
+    features.append(np.std(widths) / (np.mean(widths) + 1e-6))
+    features.append(np.std(areas) / (np.mean(areas) + 1e-6))
+    bottom = [y + s[cv2.CC_STAT_HEIGHT] for _, s in valid]
+    features.append(np.std(bottom) / (32 + 1e-6))
+    gaps = np.diff(sorted(x_pos)) if len(x_pos) > 1 else [0]
+    features.append(np.std(gaps) / (np.mean(gaps) + 1e-6))
+    features.append(min(len(valid), 15))
+    features.append(len(valid) / 4.0)
+    aspects = [w / (h + 1e-6) for w, h in zip(widths, heights)]
+    features.append(np.mean(aspects))
+    features.append(np.std(aspects))
+    features.append(np.sum(img > 0) / (32 * 32))
+    features.append(np.var(np.sum(img, axis=1) / 255.0))
+    features.append(np.var(np.sum(img, axis=0) / 255.0))
+    dt = cv2.distanceTransform(img, cv2.DIST_L2, 5)
+    features.append(np.mean(dt[dt > 0]) if np.any(dt > 0) else 0)
+    features.append(np.std(dt[dt > 0]) if np.any(dt > 0) else 0)
+    flipped = cv2.flip(img, 1)
+    diff = cv2.absdiff(img, flipped)
+    features.append(1.0 - np.sum(diff > 0) / (32 * 32))
+    flipped_v = cv2.flip(img, 0)
+    diff_v = cv2.absdiff(img, flipped_v)
+    features.append(1.0 - np.sum(diff_v > 0) / (32 * 32))
+    corners = cv2.goodFeaturesToTrack(img, 50, 0.01, 5)
+    features.append(len(corners) if corners is not None else 0)
+    contours, _ = cv2.findContours(img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if contours:
+        lc = max(contours, key=cv2.contourArea)
+        p = cv2.arcLength(lc, True)
+        a = cv2.contourArea(lc)
+        features.append((p**2) / (4 * np.pi * a + 1e-6))
+    else:
+        features.append(0.0)
+    mid = 16
+    features.append(np.sum(img[:mid] > 0) / (np.sum(img[mid:] > 0) + 1e-6))
+    midw = 16
+    features.append(np.sum(img[:, :midw] > 0) / (np.sum(img[:, midw:] > 0) + 1e-6))
+    return features
+
+# ── Endpoints ─────────────────────────────────────────────────────────────────
+@app.get("/health")
 async def health():
-    """Health check endpoint."""
-    classifier = get_classifier()
-    return HealthResponse(
-        status="ok",
-        model_loaded=classifier.model is not None,
-    )
-
+    return {
+        "status": "ok",
+        "model_loaded": rf_model is not None,
+        "model_version": metadata.get("model_version", "unknown"),
+        "rf_accuracy": metadata.get("rf_accuracy", "unknown")
+    }
 
 @app.post("/analyze", response_model=AnalyzeResponse)
-async def analyze(request: AnalyzeRequest):
-    """
-    Analyze a handwriting sample image for dyslexia indicators.
-    
-    Pipeline:
-    1. Download image from URL
-    2. Preprocess (grayscale, binarize, deskew, denoise)
-    3. Segment characters
-    4. Extract features
-    5. Classify
-    6. Send results to webhook
-    """
+async def analyze(req: AnalyzeRequest):
     try:
-        # Step 0: Download image
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.get(request.image_url)
-            if response.status_code != 200:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Could not download image: HTTP {response.status_code}"
-                )
-            image_bytes = response.content
+        # Download image from Firebase Storage
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(req.image_url, timeout=30)
+            if resp.status_code != 200:
+                raise HTTPException(status_code=400, detail="Could not download image")
+            img_bytes = resp.content
 
-        # Step 1: Preprocess
-        image = load_image_from_bytes(image_bytes)
-        binary = preprocess(image)
+        # Preprocess
+        img = preprocess_image_from_bytes(img_bytes)
+        if img is None:
+            raise HTTPException(status_code=400, detail="Could not process image")
 
-        # Step 2: Segment characters
-        char_crops = segment_characters(binary)
+        # Extract features
+        raw_features = extract_features(img)
 
-        # Step 3: Extract features
-        features = extract_features(char_crops, request.stroke_metadata)
+        if rf_model is not None and scaler is not None:
+            # Scale features
+            feat_array = np.array(raw_features).reshape(1, -1)
+            feat_scaled = scaler.transform(feat_array)
 
-        # Step 4: Classify
-        classifier = get_classifier()
-        result = classifier.classify(features)
+            # Predict
+            proba = rf_model.predict_proba(feat_scaled)[0]
+            risk_proba = float(proba[1])  # probability of dyslexia indicator
 
-        # Step 5: Send results to webhook
-        if VERCEL_WEBHOOK_URL:
+            # Incorporate stroke timing metadata
+            pause_ratio = req.stroke_metadata.get('pauseRatio', 0)
+            speed_variance = req.stroke_metadata.get('speedVariance', 0)
+            timing_risk = min(pause_ratio * 0.4 + speed_variance * 0.1, 0.3)
+            combined_risk = min(risk_proba * 0.7 + timing_risk, 1.0)
+        else:
+            # Fallback when model not loaded
+            combined_risk = 0.3
+            raw_features = [0.0] * 20
+
+        # Compute individual dimension scores (0–100)
+        f = raw_features
+        letter_form_score = max(0, 100 - (f[0] * 80 + f[1] * 20))
+        spacing_score = max(0, 100 - (f[4] * 100))
+        baseline_score = max(0, 100 - (f[3] * 150))
+        reversal_score = min(100, (f[14] * 40 + abs(f[19] - 1.0) * 60))
+
+        # Build indicators
+        indicators = {
+            "reversals": [{"confidence": float(f[14]), "type": "horizontal_symmetry"}]
+                         if f[14] > 0.7 else [],
+            "baselineDrift": float(f[3]) > 0.3,
+            "sizingInconsistency": float(f[0]) > 0.4,
+            "spacingIrregularity": float(f[4]) > 0.5,
+            "omissionRisk": float(f[6]) < 0.5,
+        }
+
+        risk_level = (
+            "high" if combined_risk > 0.65 else
+            "medium" if combined_risk > 0.35 else
+            "low"
+        )
+
+        # Callback to Vercel webhook
+        webhook_url = os.getenv("VERCEL_WEBHOOK_URL")
+        webhook_secret = os.getenv("ML_WEBHOOK_SECRET")
+        if webhook_url and webhook_secret:
+            payload = {
+                "sampleId": req.sample_id,
+                "scores": {
+                    "letterFormScore": round(letter_form_score, 1),
+                    "spacingScore": round(spacing_score, 1),
+                    "baselineScore": round(baseline_score, 1),
+                    "reversalScore": round(reversal_score, 1),
+                    "overallRisk": round(combined_risk, 3),
+                },
+                "indicators": indicators,
+                "rawFeatures": {f"f{i}": v for i, v in enumerate(raw_features)},
+            }
             try:
-                async with httpx.AsyncClient(timeout=15.0) as client:
-                    webhook_response = await client.post(
-                        VERCEL_WEBHOOK_URL,
-                        json={
-                            "sampleId": request.sample_id,
-                            "scores": {
-                                "letter_form_score": result["letter_form_score"],
-                                "spacing_score": result["spacing_score"],
-                                "baseline_score": result["baseline_score"],
-                                "reversal_score": result["reversal_score"],
-                                "overall_dyslexia_risk": result["overall_dyslexia_risk"],
-                            },
-                            "indicators": result["indicators"],
-                            "rawFeatures": {
-                                k: v for k, v in features.items()
-                                if isinstance(v, (int, float, str, list))
-                            },
-                        },
-                        headers={
-                            "X-ML-Secret": ML_WEBHOOK_SECRET,
-                            "Content-Type": "application/json",
-                        },
+                async with httpx.AsyncClient() as client:
+                    await client.post(
+                        webhook_url,
+                        json=payload,
+                        headers={"X-ML-Secret": webhook_secret},
+                        timeout=10
                     )
-                    if webhook_response.status_code != 200:
-                        print(f"Webhook returned {webhook_response.status_code}")
-            except Exception as webhook_error:
-                print(f"Webhook call failed: {webhook_error}")
-                # Non-fatal — results are still returned in the response
+            except Exception:
+                pass  # Don't fail the analysis if webhook fails
 
         return AnalyzeResponse(
-            sample_id=request.sample_id,
-            status="complete",
+            sample_id=req.sample_id,
             scores={
-                "letter_form_score": result["letter_form_score"],
-                "spacing_score": result["spacing_score"],
-                "baseline_score": result["baseline_score"],
-                "reversal_score": result["reversal_score"],
-                "overall_dyslexia_risk": result["overall_dyslexia_risk"],
+                "letterFormScore": round(letter_form_score, 1),
+                "spacingScore": round(spacing_score, 1),
+                "baselineScore": round(baseline_score, 1),
+                "reversalScore": round(reversal_score, 1),
+                "overallRisk": round(combined_risk, 3),
             },
-            indicators=result["indicators"],
+            indicators=indicators,
+            risk_level=risk_level,
         )
 
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Analysis error: {traceback.format_exc()}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Analysis failed: {str(e)}"
-        )
-
-
-@app.get("/")
-async def root():
-    """Root endpoint with API info."""
-    return {
-        "service": "NeuroLearn ML Service",
-        "version": "1.0.0",
-        "endpoints": {
-            "/analyze": "POST - Analyze handwriting sample",
-            "/health": "GET - Health check",
-        }
-    }
+        raise HTTPException(status_code=500, detail=str(e))

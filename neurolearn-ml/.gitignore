@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.env
+.env.local
+data/
+models/*.pkl
+models/*.h5
+models/*.tflite
+firebase_service_account.json

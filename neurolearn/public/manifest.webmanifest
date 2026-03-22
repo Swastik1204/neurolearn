@@ -1,0 +1,37 @@
+{
+  "name": "NeuroLearn",
+  "short_name": "NeuroLearn",
+  "description": "AI-powered adaptive learning for neurodivergent children",
+  "theme_color": "#4F46E5",
+  "background_color": "#FAFAF7",
+  "display": "standalone",
+  "orientation": "portrait",
+  "scope": "/",
+  "start_url": "/",
+  "categories": ["education", "health", "kids"],
+  "icons": [
+    {
+      "src": "/icons.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Writing Exercise",
+      "url": "/student/exercise",
+      "description": "Start a writing practice session"
+    },
+    {
+      "name": "Guardian Dashboard",
+      "url": "/guardian",
+      "description": "View your child's progress"
+    }
+  ]
+}
