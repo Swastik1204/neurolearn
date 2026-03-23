@@ -1,495 +1,611 @@
 """
 NeuroLearn — Handwriting Analysis Model Training
-Trains two models:
-  1. RandomForest classifier (forensic feature-based) → dyslexia_classifier.pkl
-  2. Keras CNN (image-based) → dyslexia_cnn.tflite (for Firebase ML)
+Dataset: Local ZIP extracted to data/
+Output:  models/dyslexia_classifier.pkl  (RandomForest — for Render)
+         models/feature_scaler.pkl        (StandardScaler)
+         models/dyslexia_cnn.h5           (Keras CNN — backup)
+         models/dyslexia_cnn.tflite       (TFLite — for Firebase ML)
+         models/model_metadata.json       (version + accuracy info)
+         training_log.txt                 (full log — give this to developer)
 """
 
 import os
+import sys
 import cv2
+import time
+import json
+import joblib
+import logging
 import numpy as np
 import pandas as pd
-import joblib
-import json
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from pathlib import Path
+from datetime import datetime
 from tqdm import tqdm
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.metrics import (classification_report, confusion_matrix,
+                              roc_auc_score, accuracy_score)
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
 import warnings
 warnings.filterwarnings('ignore')
 
-# ── Configuration ─────────────────────────────────────────────────────────────
-DATA_PATH = Path(r"D:\My projects\NeuroLearn\neurolearn-ml\data")
-MODELS_PATH = Path(r"D:\My projects\NeuroLearn\neurolearn-ml\models")
-TEMPLATES_PATH = Path(r"D:\My projects\NeuroLearn\neurolearn-ml\templates")
-MODELS_PATH.mkdir(exist_ok=True)
-TEMPLATES_PATH.mkdir(exist_ok=True)
+# ── Paths ─────────────────────────────────────────────────────────────────────
+BASE    = Path(r"D:\My projects\NeuroLearn\neurolearn-ml")
+DATA    = BASE / "data"
+MODELS  = BASE / "models"
+LOG_FILE = BASE / "training_log.txt"
+MODELS.mkdir(exist_ok=True)
 
-# Dyslexia indicator word list — these are the 10 words in NeuroLearn exercises
-# Focus training on words with reversal-prone letters
-DYSLEXIA_WORDS = ["bed", "dog", "was", "saw", "pat", "tap", "no", "on", "bid", "dib"]
-REVERSAL_PAIRS = [('b','d'), ('p','q'), ('n','u'), ('m','w')]
-IMG_SIZE = (32, 32)
-MAX_SAMPLES = 8000  # cap for memory management on 16GB RAM
+# ── Logging — writes to both console AND training_log.txt ─────────────────────
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s  %(message)s',
+    datefmt='%H:%M:%S',
+    handlers=[
+        logging.FileHandler(LOG_FILE, mode='w', encoding='utf-8'),
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+log = logging.getLogger(__name__)
 
-print("=" * 60)
-print("NeuroLearn — Handwriting Analysis Model Training")
-print("=" * 60)
+def separator():
+    log.info("=" * 65)
 
-# ── Step 1: Load and preprocess images ────────────────────────────────────────
-def preprocess_image(img_path):
-    """Full forensic preprocessing pipeline."""
+separator()
+log.info("NeuroLearn — Handwriting Analysis Model Training")
+log.info(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+log.info(f"Python:  {sys.version}")
+log.info(f"TF:      {tf.__version__}")
+log.info(f"Data:    {DATA}")
+log.info(f"Models:  {MODELS}")
+separator()
+
+# ── Config ────────────────────────────────────────────────────────────────────
+IMG_SIZE   = (32, 32)
+MAX_SAMPLES = 10000   # cap for 16GB RAM — increase to 20000 if no OOM
+BATCH_SIZE  = 32
+EPOCHS      = 50
+RF_TREES    = 200
+RANDOM_SEED = 42
+
+# ── Step 1: Find all images ────────────────────────────────────────────────────
+log.info("\n[STEP 1] Scanning dataset...")
+
+def find_images(root, limit=MAX_SAMPLES):
+    exts = {'.png', '.jpg', '.jpeg', '.bmp', '.tiff'}
+    found = []
+    for p in Path(root).rglob('*'):
+        if p.suffix.lower() in exts:
+            found.append(p)
+            if len(found) >= limit:
+                break
+    return found
+
+all_images = find_images(DATA)
+log.info(f"Total images found: {len(all_images)}")
+
+if len(all_images) == 0:
+    log.error(f"No images found in {DATA}")
+    log.error("Check that the ZIP was extracted correctly.")
+    log.error(f"Contents: {list(DATA.iterdir()) if DATA.exists() else 'directory missing'}")
+    sys.exit(1)
+
+# Log sample paths to help verify structure
+log.info("Sample image paths (first 5):")
+for p in all_images[:5]:
+    log.info(f"  {p}")
+
+# ── Step 2: Preprocessing ─────────────────────────────────────────────────────
+log.info("\n[STEP 2] Preprocessing images...")
+
+def preprocess(img_path):
+    """Forensic preprocessing: grayscale → Otsu binarise → deskew → denoise → resize."""
     img = cv2.imread(str(img_path), cv2.IMREAD_GRAYSCALE)
-    if img is None:
+    if img is None or img.size == 0:
         return None
 
     # Otsu binarisation
-    _, binary = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    _, binary = cv2.threshold(img, 0, 255,
+                               cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
 
-    # Deskew using moments
-    coords = np.column_stack(np.where(binary > 0))
-    if len(coords) < 10:
+    # Skip mostly empty images
+    if np.sum(binary > 0) < 50:
         return None
-    angle = cv2.minAreaRect(coords)[-1]
-    if angle < -45:
-        angle = -(90 + angle)
-    else:
-        angle = -angle
-    (h, w) = binary.shape
-    center = (w // 2, h // 2)
-    M = cv2.getRotationMatrix2D(center, angle, 1.0)
-    deskewed = cv2.warpAffine(binary, M, (w, h), flags=cv2.INTER_CUBIC,
-                               borderMode=cv2.BORDER_REPLICATE)
+
+    # Deskew via moments
+    coords = np.column_stack(np.where(binary > 0))
+    if len(coords) > 10:
+        angle = cv2.minAreaRect(coords)[-1]
+        angle = -(90 + angle) if angle < -45 else -angle
+        if abs(angle) > 0.5:
+            (h, w) = binary.shape
+            M = cv2.getRotationMatrix2D((w // 2, h // 2), angle, 1.0)
+            binary = cv2.warpAffine(binary, M, (w, h),
+                                    flags=cv2.INTER_CUBIC,
+                                    borderMode=cv2.BORDER_REPLICATE)
 
     # Morphological denoising
     kernel = np.ones((2, 2), np.uint8)
-    denoised = cv2.morphologyEx(deskewed, cv2.MORPH_OPEN, kernel)
+    binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
 
     # Resize to standard size
-    resized = cv2.resize(denoised, IMG_SIZE)
-    return resized
+    return cv2.resize(binary, IMG_SIZE)
 
 
-def extract_forensic_features(img, word_label=""):
-    """Extract 20-dimensional forensic feature vector from preprocessed image."""
+# ── Step 3: Feature extraction ────────────────────────────────────────────────
+FEATURE_NAMES = [
+    'height_variance',    'width_variance',       'area_variance',
+    'baseline_deviation', 'spacing_irregularity', 'component_count',
+    'component_ratio',    'aspect_ratio_mean',    'aspect_ratio_std',
+    'ink_density',        'h_proj_variance',      'v_proj_variance',
+    'stroke_width_mean',  'stroke_width_std',     'horizontal_symmetry',
+    'vertical_symmetry',  'corner_count',         'contour_complexity',
+    'ascender_ratio',     'lr_ratio',
+]
+
+def extract_features(img):
+    """20-dimensional forensic feature vector from preprocessed image."""
     if img is None:
         return None
 
-    features = {}
+    f = {}
+    num_labels, _, stats, _ = cv2.connectedComponentsWithStats(img)
 
-    # Connected components analysis
-    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(img)
-
-    # Filter valid components (not noise, not whole image)
     valid = [(i, stats[i]) for i in range(1, num_labels)
-             if 50 < stats[i][cv2.CC_STAT_AREA] < 2000]
+             if 30 < stats[i][cv2.CC_STAT_AREA] < 3000]
 
-    if len(valid) < 2:
+    if len(valid) < 1:
         return None
 
-    areas = [s[cv2.CC_STAT_AREA] for _, s in valid]
+    areas   = [s[cv2.CC_STAT_AREA]   for _, s in valid]
     heights = [s[cv2.CC_STAT_HEIGHT] for _, s in valid]
-    widths = [s[cv2.CC_STAT_WIDTH] for _, s in valid]
-    x_positions = [s[cv2.CC_STAT_LEFT] for _, s in valid]
-    y_positions = [s[cv2.CC_STAT_TOP] for _, s in valid]
+    widths  = [s[cv2.CC_STAT_WIDTH]  for _, s in valid]
+    x_pos   = [s[cv2.CC_STAT_LEFT]   for _, s in valid]
 
-    # 1. Letter height variance (dyslexia = inconsistent sizing)
-    features['height_variance'] = np.std(heights) / (np.mean(heights) + 1e-6)
+    # Variance features
+    f['height_variance']    = float(np.std(heights) / (np.mean(heights) + 1e-6))
+    f['width_variance']     = float(np.std(widths)  / (np.mean(widths)  + 1e-6))
+    f['area_variance']      = float(np.std(areas)   / (np.mean(areas)   + 1e-6))
 
-    # 2. Letter width variance
-    features['width_variance'] = np.std(widths) / (np.mean(widths) + 1e-6)
+    # Baseline deviation
+    bottoms = [s[cv2.CC_STAT_TOP] + s[cv2.CC_STAT_HEIGHT] for _, s in valid]
+    f['baseline_deviation'] = float(np.std(bottoms) / (IMG_SIZE[1] + 1e-6))
 
-    # 3. Area variance
-    features['area_variance'] = np.std(areas) / (np.mean(areas) + 1e-6)
-
-    # 4. Baseline deviation (y-position consistency)
-    bottom_edges = [y + s[cv2.CC_STAT_HEIGHT] for _, s in valid]
-    features['baseline_deviation'] = np.std(bottom_edges) / (IMG_SIZE[1] + 1e-6)
-
-    # 5. Spacing irregularity
-    if len(x_positions) > 1:
-        sorted_x = sorted(x_positions)
-        gaps = np.diff(sorted_x)
-        features['spacing_irregularity'] = np.std(gaps) / (np.mean(gaps) + 1e-6)
+    # Spacing
+    if len(x_pos) > 1:
+        gaps = np.diff(sorted(x_pos))
+        f['spacing_irregularity'] = float(np.std(gaps) / (np.mean(gaps) + 1e-6))
     else:
-        features['spacing_irregularity'] = 0.0
+        f['spacing_irregularity'] = 0.0
 
-    # 6. Component count (omissions = fewer components than expected)
-    features['component_count'] = min(len(valid), 15)
+    # Component counts
+    f['component_count'] = float(min(len(valid), 20))
+    f['component_ratio']  = float(len(valid) / max(1, len(valid)))
 
-    # 7. Expected component ratio (vs word length)
-    expected = max(len(word_label), 1)
-    features['component_ratio'] = len(valid) / expected
-
-    # 8. Aspect ratio mean
+    # Aspect ratio
     aspects = [w / (h + 1e-6) for w, h in zip(widths, heights)]
-    features['aspect_ratio_mean'] = np.mean(aspects)
-    features['aspect_ratio_std'] = np.std(aspects)
+    f['aspect_ratio_mean'] = float(np.mean(aspects))
+    f['aspect_ratio_std']  = float(np.std(aspects))
 
-    # 9. Image density (ink coverage)
-    features['ink_density'] = np.sum(img > 0) / (img.shape[0] * img.shape[1])
+    # Ink density
+    f['ink_density'] = float(np.sum(img > 0) / (img.shape[0] * img.shape[1]))
 
-    # 10. Horizontal projection profile variance
-    h_proj = np.sum(img, axis=1) / 255.0
-    features['h_proj_variance'] = np.var(h_proj)
+    # Projection profiles
+    f['h_proj_variance'] = float(np.var(np.sum(img, axis=1) / 255.0))
+    f['v_proj_variance'] = float(np.var(np.sum(img, axis=0) / 255.0))
 
-    # 11. Vertical projection profile variance
-    v_proj = np.sum(img, axis=0) / 255.0
-    features['v_proj_variance'] = np.var(v_proj)
+    # Stroke width via distance transform
+    dt = cv2.distanceTransform(img, cv2.DIST_L2, 5)
+    nz = dt[dt > 0]
+    f['stroke_width_mean'] = float(np.mean(nz)) if len(nz) > 0 else 0.0
+    f['stroke_width_std']  = float(np.std(nz))  if len(nz) > 0 else 0.0
 
-    # 12. Stroke width estimation (thin vs thick strokes)
-    dist_transform = cv2.distanceTransform(img, cv2.DIST_L2, 5)
-    features['stroke_width_mean'] = np.mean(dist_transform[dist_transform > 0]) if np.any(dist_transform > 0) else 0
-    features['stroke_width_std'] = np.std(dist_transform[dist_transform > 0]) if np.any(dist_transform > 0) else 0
+    # Symmetry (key reversal indicator)
+    flip_h = cv2.flip(img, 1)
+    flip_v = cv2.flip(img, 0)
+    diff_h = cv2.absdiff(img, flip_h)
+    diff_v = cv2.absdiff(img, flip_v)
+    total  = float(img.shape[0] * img.shape[1])
+    f['horizontal_symmetry'] = 1.0 - float(np.sum(diff_h > 0)) / total
+    f['vertical_symmetry']   = 1.0 - float(np.sum(diff_v > 0)) / total
 
-    # 13. Symmetry score (mirrored letters have high symmetry)
-    flipped = cv2.flip(img, 1)
-    diff = cv2.absdiff(img, flipped)
-    features['horizontal_symmetry'] = 1.0 - (np.sum(diff > 0) / (img.shape[0] * img.shape[1]))
-
-    # 14. Vertical symmetry
-    flipped_v = cv2.flip(img, 0)
-    diff_v = cv2.absdiff(img, flipped_v)
-    features['vertical_symmetry'] = 1.0 - (np.sum(diff_v > 0) / (img.shape[0] * img.shape[1]))
-
-    # 15. Corner density (structural feature)
+    # Corner count
     corners = cv2.goodFeaturesToTrack(img, 50, 0.01, 5)
-    features['corner_count'] = len(corners) if corners is not None else 0
+    f['corner_count'] = float(len(corners)) if corners is not None else 0.0
 
-    # 16. Contour complexity
-    contours, _ = cv2.findContours(img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    # Contour complexity
+    contours, _ = cv2.findContours(img, cv2.RETR_EXTERNAL,
+                                    cv2.CHAIN_APPROX_SIMPLE)
     if contours:
-        largest = max(contours, key=cv2.contourArea)
-        perimeter = cv2.arcLength(largest, True)
-        area = cv2.contourArea(largest)
-        features['contour_complexity'] = (perimeter ** 2) / (4 * np.pi * area + 1e-6)
+        lc = max(contours, key=cv2.contourArea)
+        perim = cv2.arcLength(lc, True)
+        area  = cv2.contourArea(lc)
+        f['contour_complexity'] = float((perim ** 2) / (4 * np.pi * area + 1e-6))
     else:
-        features['contour_complexity'] = 0.0
+        f['contour_complexity'] = 0.0
 
-    # 17. Top-half vs bottom-half ink ratio (ascenders/descenders)
-    mid = img.shape[0] // 2
-    top_ink = np.sum(img[:mid] > 0)
-    bot_ink = np.sum(img[mid:] > 0)
-    features['ascender_ratio'] = top_ink / (bot_ink + 1e-6)
-
-    # 18. Left-right ink ratio (reversal indicator)
+    # Ascender / left-right ratio
+    mid_h = img.shape[0] // 2
     mid_w = img.shape[1] // 2
-    left_ink = np.sum(img[:, :mid_w] > 0)
-    right_ink = np.sum(img[:, mid_w:] > 0)
-    features['lr_ratio'] = left_ink / (right_ink + 1e-6)
+    top_ink  = float(np.sum(img[:mid_h] > 0))
+    bot_ink  = float(np.sum(img[mid_h:] > 0))
+    left_ink = float(np.sum(img[:, :mid_w] > 0))
+    rgt_ink  = float(np.sum(img[:, mid_w:] > 0))
+    f['ascender_ratio'] = top_ink  / (bot_ink + 1e-6)
+    f['lr_ratio']       = left_ink / (rgt_ink + 1e-6)
 
-    return list(features.values())
+    return [f[k] for k in FEATURE_NAMES]
 
 
-# ── Step 2: Load dataset ───────────────────────────────────────────────────────
-print("\n[1/6] Loading dataset...")
+# ── Step 4: Build dataset ──────────────────────────────────────────────────────
+log.info("\n[STEP 3] Extracting features from all images...")
 
-def find_image_files(data_path, max_count=MAX_SAMPLES):
-    """Find all PNG/JPG word images in the IAM dataset."""
-    images = []
-    for root, dirs, files in os.walk(data_path):
-        for f in files:
-            if f.lower().endswith(('.png', '.jpg', '.jpeg')):
-                images.append(Path(root) / f)
-                if len(images) >= max_count:
-                    return images
-    return images
+X_feat   = []   # feature vectors
+X_img    = []   # raw images for CNN
+y        = []   # labels
+skipped  = 0
+t_start  = time.time()
 
-image_files = find_image_files(DATA_PATH)
-print(f"Found {len(image_files)} images")
-
-if len(image_files) == 0:
-    print("ERROR: No images found in data/ directory")
-    print(f"Looked in: {DATA_PATH}")
-    print("Please check that the Kaggle dataset was downloaded correctly")
-    exit(1)
-
-# ── Step 3: Extract features ────────────────────────────────────────────────
-print("\n[2/6] Extracting forensic features...")
-
-X_features = []  # Feature vectors for RandomForest
-X_images = []    # Raw images for CNN
-y_labels = []    # Labels
-
-skipped = 0
-for img_path in tqdm(image_files, desc="Processing"):
-    processed = preprocess_image(img_path)
-    if processed is None:
+for img_path in tqdm(all_images, desc="Extracting features", ncols=70):
+    proc = preprocess(img_path)
+    if proc is None:
         skipped += 1
         continue
 
-    # Get word label from filename (IAM format: a01-000u-00-00.png → word)
-    filename = img_path.stem
-    parts = filename.split('-')
-
-    features = extract_forensic_features(processed, filename)
-    if features is None:
+    feat = extract_features(proc)
+    if feat is None:
         skipped += 1
         continue
 
-    # Synthetic labelling strategy:
-    # Since IAM doesn't have dyslexia labels, we create synthetic labels
-    # based on forensic feature thresholds that approximate dyslexia indicators
-    # This is the standard approach for training dyslexia detection models
-    # when clinical labels are unavailable
+    # ── Synthetic label from forensic features ────────────────────────────
+    # Since IAM has no dyslexia labels, we derive labels from the features
+    # that most strongly correlate with dyslexia indicators in literature:
+    #   high horizontal_symmetry → potential reversal
+    #   high baseline_deviation  → writing instability
+    #   high height_variance     → inconsistent sizing
+    #   high lr_ratio asymmetry  → directional confusion
+    sym        = feat[FEATURE_NAMES.index('horizontal_symmetry')]
+    base_dev   = feat[FEATURE_NAMES.index('baseline_deviation')]
+    height_var = feat[FEATURE_NAMES.index('height_variance')]
+    lr         = feat[FEATURE_NAMES.index('lr_ratio')]
+    lr_asym    = abs(lr - 1.0)
 
-    lr_ratio = features[-1]       # left-right ratio
-    symmetry = features[12]       # horizontal symmetry
-    height_var = features[0]      # height variance
-    baseline_dev = features[3]    # baseline deviation
+    # Weighted indicator score
+    indicator_score = (
+        sym        * 0.35 +
+        base_dev   * 0.25 +
+        height_var * 0.20 +
+        lr_asym    * 0.20
+    )
+    label = 1 if indicator_score > 0.40 else 0
 
-    # Reversal indicator: high symmetry + high LR ratio asymmetry
-    reversal_score = symmetry * 0.4 + (abs(lr_ratio - 1.0) * 0.3) + (height_var * 0.3)
+    X_feat.append(feat)
+    X_img.append(proc)
+    y.append(label)
 
-    # Label: 1 = dyslexia indicator present, 0 = normal
-    label = 1 if reversal_score > 0.45 else 0
+elapsed = time.time() - t_start
+X_feat = np.array(X_feat, dtype=np.float32)
+# Clean up any potential inf/nan values from feature extraction calculations
+X_feat = np.nan_to_num(X_feat, nan=0.0, posinf=1e6, neginf=-1e6)
+X_img  = np.array(X_img,  dtype=np.float32)
+y      = np.array(y)
 
-    X_features.append(features)
-    X_images.append(processed)
-    y_labels.append(label)
+log.info(f"Feature extraction complete in {elapsed:.1f}s")
+log.info(f"Total processed : {len(y)}")
+log.info(f"Skipped         : {skipped}")
+log.info(f"Normal (0)      : {int(np.sum(y == 0))}  ({100*np.mean(y==0):.1f}%)")
+log.info(f"Indicator (1)   : {int(np.sum(y == 1))}  ({100*np.mean(y==1):.1f}%)")
+log.info(f"Feature shape   : {X_feat.shape}")
 
-X_features = np.array(X_features)
-X_images = np.array(X_images)
-y_labels = np.array(y_labels)
+if len(y) < 100:
+    log.error("Too few samples. Check dataset extraction.")
+    sys.exit(1)
 
-print(f"Processed: {len(y_labels)} samples (skipped: {skipped})")
-print(f"Class distribution: Normal={sum(y_labels==0)}, Indicator={sum(y_labels==1)}")
 
-# ── Step 4: Train RandomForest ─────────────────────────────────────────────
-print("\n[3/6] Training RandomForest classifier...")
+# ── Step 5: Train RandomForest ─────────────────────────────────────────────────
+separator()
+log.info("[STEP 4] Training RandomForest classifier...")
 
-scaler = StandardScaler()
-X_scaled = scaler.fit_transform(X_features)
+scaler   = StandardScaler()
+X_scaled = scaler.fit_transform(X_feat)
 
-X_train, X_test, y_train, y_test = train_test_split(
-    X_scaled, y_labels, test_size=0.2, random_state=42, stratify=y_labels
+X_tr, X_te, y_tr, y_te = train_test_split(
+    X_scaled, y, test_size=0.2, random_state=RANDOM_SEED, stratify=y
 )
 
-rf_model = RandomForestClassifier(
-    n_estimators=150,
+log.info(f"Train samples: {len(y_tr)}  |  Test samples: {len(y_te)}")
+
+rf = RandomForestClassifier(
+    n_estimators=RF_TREES,
     max_depth=20,
-    min_samples_split=5,
+    min_samples_split=4,
     min_samples_leaf=2,
-    class_weight='balanced',  # handles class imbalance
-    random_state=42,
-    n_jobs=-1,  # use all CPU cores
-    verbose=1
+    class_weight='balanced',
+    random_state=RANDOM_SEED,
+    n_jobs=-1,
+    verbose=0
 )
 
-rf_model.fit(X_train, y_train)
+t0 = time.time()
+rf.fit(X_tr, y_tr)
+rf_time = time.time() - t0
 
-# Evaluate
-y_pred = rf_model.predict(X_test)
-print("\nRandomForest Results:")
-print(classification_report(y_test, y_pred, target_names=['Normal', 'Dyslexia Indicator']))
+y_pred    = rf.predict(X_te)
+y_proba   = rf.predict_proba(X_te)[:, 1]
+rf_acc    = accuracy_score(y_te, y_pred)
+rf_auc    = roc_auc_score(y_te, y_proba)
 
-rf_accuracy = rf_model.score(X_test, y_test)
-print(f"Test Accuracy: {rf_accuracy:.4f}")
+log.info(f"\nRandomForest training time : {rf_time:.1f}s")
+log.info(f"Test accuracy              : {rf_acc:.4f}  ({rf_acc*100:.2f}%)")
+log.info(f"Test AUC                   : {rf_auc:.4f}")
+log.info("\nClassification Report:")
+report = classification_report(y_te, y_pred,
+                                target_names=['Normal', 'Dyslexia Indicator'])
+for line in report.split('\n'):
+    log.info(line)
 
-# Cross-validation
-cv_scores = cross_val_score(rf_model, X_scaled, y_labels, cv=5, n_jobs=-1)
-print(f"5-Fold CV Accuracy: {cv_scores.mean():.4f} (+/- {cv_scores.std()*2:.4f})")
+log.info("Confusion Matrix:")
+cm = confusion_matrix(y_te, y_pred)
+log.info(f"  TN={cm[0,0]}  FP={cm[0,1]}")
+log.info(f"  FN={cm[1,0]}  TP={cm[1,1]}")
 
-# Save RandomForest model
-joblib.dump(rf_model, MODELS_PATH / 'dyslexia_classifier.pkl')
-joblib.dump(scaler, MODELS_PATH / 'feature_scaler.pkl')
-print(f"\nSaved: models/dyslexia_classifier.pkl")
-print(f"Saved: models/feature_scaler.pkl")
+# 5-fold cross validation
+log.info("\n5-fold cross validation (takes a few minutes)...")
+cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=RANDOM_SEED)
+cv_scores = cross_val_score(rf, X_scaled, y, cv=cv, scoring='roc_auc', n_jobs=-1)
+log.info(f"CV AUC: {cv_scores.mean():.4f} (+/- {cv_scores.std()*2:.4f})")
+log.info(f"CV per fold: {[f'{s:.4f}' for s in cv_scores]}")
+
+# Save RF model
+joblib.dump(rf,     MODELS / 'dyslexia_classifier.pkl')
+joblib.dump(scaler, MODELS / 'feature_scaler.pkl')
+log.info(f"\nSaved: {MODELS/'dyslexia_classifier.pkl'}")
+log.info(f"Saved: {MODELS/'feature_scaler.pkl'}")
 
 # Feature importance plot
-importance = pd.Series(
-    rf_model.feature_importances_,
-    index=[f'feature_{i}' for i in range(X_features.shape[1])]
-).sort_values(ascending=False)[:10]
+importance_df = pd.DataFrame({
+    'feature': FEATURE_NAMES,
+    'importance': rf.feature_importances_
+}).sort_values('importance', ascending=False)
+
 fig, ax = plt.subplots(figsize=(10, 6))
-importance.plot(kind='bar', ax=ax, color='steelblue')
-ax.set_title('Top 10 Most Important Forensic Features')
-ax.set_xlabel('Feature')
-ax.set_ylabel('Importance Score')
+importance_df.head(10).plot(x='feature', y='importance', kind='bar', ax=ax,
+                             color='steelblue', legend=False)
+ax.set_title('Top 10 Most Important Forensic Features (RandomForest)')
+ax.set_xlabel('')
+ax.set_ylabel('Importance')
+plt.xticks(rotation=30, ha='right')
 plt.tight_layout()
-plt.savefig(MODELS_PATH / 'feature_importance.png', dpi=100)
+plt.savefig(MODELS / 'feature_importance.png', dpi=100)
 plt.close()
-print("Saved: models/feature_importance.png")
+log.info("Saved: models/feature_importance.png")
 
-# ── Step 5: Train Keras CNN (for Firebase ML / TFLite) ─────────────────────
-print("\n[4/6] Training Keras CNN for Firebase ML hosting...")
+log.info("\nTop 10 feature importances:")
+for _, row in importance_df.head(10).iterrows():
+    log.info(f"  {row['feature']:30s} {row['importance']:.4f}")
 
-# Prepare image data for CNN
-X_cnn = X_images.astype('float32') / 255.0
-X_cnn = X_cnn.reshape(-1, 32, 32, 1)  # add channel dimension
 
-X_train_cnn, X_test_cnn, y_train_cnn, y_test_cnn = train_test_split(
-    X_cnn, y_labels, test_size=0.2, random_state=42, stratify=y_labels
+# ── Step 6: Train Keras CNN ────────────────────────────────────────────────────
+separator()
+log.info("[STEP 5] Training Keras CNN (for Firebase ML / TFLite)...")
+
+# Prepare CNN data — normalize, add channel dim
+X_cnn = (X_img / 255.0).reshape(-1, 32, 32, 1)
+
+X_tr_c, X_te_c, y_tr_c, y_te_c = train_test_split(
+    X_cnn, y, test_size=0.2, random_state=RANDOM_SEED, stratify=y
 )
+log.info(f"CNN train: {len(y_tr_c)}  |  test: {len(y_te_c)}")
 
-# Build CNN model
-def build_cnn():
-    model = keras.Sequential([
-        layers.Input(shape=(32, 32, 1)),
-
-        # Conv block 1
-        layers.Conv2D(32, (3, 3), activation='relu', padding='same'),
+def build_cnn(input_shape=(32, 32, 1)):
+    m = keras.Sequential([
+        layers.Input(shape=input_shape),
+        layers.Conv2D(32, (3,3), activation='relu', padding='same'),
         layers.BatchNormalization(),
-        layers.MaxPooling2D((2, 2)),
+        layers.MaxPooling2D((2,2)),
         layers.Dropout(0.25),
 
-        # Conv block 2
-        layers.Conv2D(64, (3, 3), activation='relu', padding='same'),
+        layers.Conv2D(64, (3,3), activation='relu', padding='same'),
         layers.BatchNormalization(),
-        layers.MaxPooling2D((2, 2)),
+        layers.MaxPooling2D((2,2)),
         layers.Dropout(0.25),
 
-        # Conv block 3
-        layers.Conv2D(128, (3, 3), activation='relu', padding='same'),
+        layers.Conv2D(128, (3,3), activation='relu', padding='same'),
         layers.BatchNormalization(),
         layers.GlobalAveragePooling2D(),
         layers.Dropout(0.4),
 
-        # Dense layers
         layers.Dense(128, activation='relu'),
         layers.Dropout(0.4),
-        layers.Dense(64, activation='relu'),
-        layers.Dense(1, activation='sigmoid'),  # binary: normal vs indicator
+        layers.Dense(64,  activation='relu'),
+        layers.Dense(1,   activation='sigmoid'),
     ])
-    return model
+    return m
 
-cnn_model = build_cnn()
-cnn_model.compile(
+cnn = build_cnn()
+cnn.compile(
     optimizer=keras.optimizers.Adam(learning_rate=0.001),
     loss='binary_crossentropy',
     metrics=['accuracy', keras.metrics.AUC(name='auc')]
 )
-cnn_model.summary()
 
-# Callbacks
+# Log model summary to file
+summary_lines = []
+cnn.summary(print_fn=lambda x: summary_lines.append(x))
+for line in summary_lines:
+    log.info(line)
+
 callbacks = [
     keras.callbacks.EarlyStopping(
-        monitor='val_auc', patience=8, restore_best_weights=True, mode='max'
+        monitor='val_auc', patience=8,
+        restore_best_weights=True, mode='max', verbose=1
     ),
     keras.callbacks.ReduceLROnPlateau(
-        monitor='val_loss', factor=0.5, patience=4, min_lr=1e-6
+        monitor='val_loss', factor=0.5, patience=4,
+        min_lr=1e-6, verbose=1
     ),
     keras.callbacks.ModelCheckpoint(
-        str(MODELS_PATH / 'dyslexia_cnn_best.h5'),
-        monitor='val_auc', save_best_only=True, mode='max'
-    )
+        str(MODELS / 'dyslexia_cnn_best.h5'),
+        monitor='val_auc', save_best_only=True, mode='max', verbose=1
+    ),
 ]
 
-# Data augmentation for training
+# Data augmentation — NOTE: horizontal_flip=False is CRITICAL
+# Flipping handwriting would teach the model that b and d are the same —
+# the exact opposite of what reversal detection requires.
 datagen = tf.keras.preprocessing.image.ImageDataGenerator(
     rotation_range=5,
     width_shift_range=0.1,
     height_shift_range=0.1,
     zoom_range=0.1,
-    horizontal_flip=False,  # never flip — we're detecting reversals!
+    horizontal_flip=False,   # ← NEVER flip handwriting images
+    fill_mode='nearest'
 )
 
-history = cnn_model.fit(
-    datagen.flow(X_train_cnn, y_train_cnn, batch_size=32),
-    epochs=40,
-    validation_data=(X_test_cnn, y_test_cnn),
+log.info(f"\nStarting CNN training — max {EPOCHS} epochs, batch {BATCH_SIZE}...")
+log.info("(EarlyStopping will stop training early if val_auc plateaus)")
+
+t0 = time.time()
+history = cnn.fit(
+    datagen.flow(X_tr_c, y_tr_c, batch_size=BATCH_SIZE),
+    epochs=EPOCHS,
+    validation_data=(X_te_c, y_te_c),
     callbacks=callbacks,
     verbose=1
 )
+cnn_time = time.time() - t0
 
-# Evaluate CNN
-cnn_results = cnn_model.evaluate(X_test_cnn, y_test_cnn, verbose=0)
-print(f"\nCNN Results — Loss: {cnn_results[0]:.4f}, Accuracy: {cnn_results[1]:.4f}, AUC: {cnn_results[2]:.4f}")
+# Evaluate
+cnn_results = cnn.evaluate(X_te_c, y_te_c, verbose=0)
+cnn_loss, cnn_acc, cnn_auc = cnn_results
+
+log.info(f"\nCNN training time : {cnn_time:.1f}s ({cnn_time/60:.1f} min)")
+log.info(f"CNN test loss     : {cnn_loss:.4f}")
+log.info(f"CNN test accuracy : {cnn_acc:.4f}  ({cnn_acc*100:.2f}%)")
+log.info(f"CNN test AUC      : {cnn_auc:.4f}")
+
+actual_epochs = len(history.history['accuracy'])
+log.info(f"Epochs trained    : {actual_epochs} / {EPOCHS}")
+log.info(f"Best val_auc      : {max(history.history['val_auc']):.4f}")
+log.info(f"Best val_acc      : {max(history.history['val_accuracy']):.4f}")
 
 # Save Keras model
-cnn_model.save(str(MODELS_PATH / 'dyslexia_cnn.h5'))
-print("Saved: models/dyslexia_cnn.h5")
+cnn.save(str(MODELS / 'dyslexia_cnn.h5'))
+log.info(f"Saved: {MODELS/'dyslexia_cnn.h5'}")
 
 # Training history plot
-fig, axes = plt.subplots(1, 2, figsize=(12, 4))
-axes[0].plot(history.history['accuracy'], label='Train')
+fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+axes[0].plot(history.history['accuracy'],     label='Train')
 axes[0].plot(history.history['val_accuracy'], label='Validation')
-axes[0].set_title('CNN Accuracy')
+axes[0].set_title('Accuracy')
 axes[0].legend()
-axes[1].plot(history.history['loss'], label='Train')
+axes[1].plot(history.history['loss'],     label='Train')
 axes[1].plot(history.history['val_loss'], label='Validation')
-axes[1].set_title('CNN Loss')
+axes[1].set_title('Loss')
 axes[1].legend()
+axes[2].plot(history.history['auc'],     label='Train')
+axes[2].plot(history.history['val_auc'], label='Validation')
+axes[2].set_title('AUC')
+axes[2].legend()
 plt.tight_layout()
-plt.savefig(MODELS_PATH / 'training_history.png', dpi=100)
+plt.savefig(MODELS / 'training_history.png', dpi=100)
 plt.close()
-print("Saved: models/training_history.png")
+log.info("Saved: models/training_history.png")
 
-# ── Step 6: Convert to TFLite for Firebase ML ──────────────────────────────
-print("\n[5/6] Converting to TFLite for Firebase ML hosting...")
 
-converter = tf.lite.TFLiteConverter.from_keras_model(cnn_model)
-converter.optimizations = [tf.lite.Optimize.DEFAULT]  # quantisation for smaller size
-converter.target_spec.supported_ops = [
-    tf.lite.OpsSet.TFLITE_BUILTINS,
-    tf.lite.OpsSet.SELECT_TF_OPS
-]
-tflite_model = converter.convert()
+# ── Step 7: Convert to TFLite ─────────────────────────────────────────────────
+separator()
+log.info("[STEP 6] Converting CNN to TFLite for Firebase ML...")
 
-tflite_path = MODELS_PATH / 'dyslexia_cnn.tflite'
-with open(tflite_path, 'wb') as f:
-    f.write(tflite_model)
+try:
+    converter = tf.lite.TFLiteConverter.from_keras_model(cnn)
+    converter.optimizations = [tf.lite.Optimize.DEFAULT]
+    # Include SELECT_TF_OPS in case of unsupported ops
+    converter.target_spec.supported_ops = [
+        tf.lite.OpsSet.TFLITE_BUILTINS,
+        tf.lite.OpsSet.SELECT_TF_OPS
+    ]
+    tflite_model = converter.convert()
 
-tflite_size = os.path.getsize(tflite_path) / 1024
-print(f"Saved: models/dyslexia_cnn.tflite ({tflite_size:.1f} KB)")
+    tflite_path = MODELS / 'dyslexia_cnn.tflite'
+    tflite_path.write_bytes(tflite_model)
+    tflite_kb = tflite_path.stat().st_size / 1024
+    log.info(f"Saved: {tflite_path}  ({tflite_kb:.1f} KB)")
 
-# Verify TFLite model
-interpreter = tf.lite.Interpreter(model_path=str(tflite_path))
-interpreter.allocate_tensors()
-input_details = interpreter.get_input_details()
-output_details = interpreter.get_output_details()
-print(f"TFLite input shape: {input_details[0]['shape']}")
-print(f"TFLite output shape: {output_details[0]['shape']}")
-print("TFLite model verified successfully")
+    # Verify TFLite
+    interp = tf.lite.Interpreter(model_path=str(tflite_path))
+    interp.allocate_tensors()
+    inp = interp.get_input_details()
+    out = interp.get_output_details()
+    log.info(f"TFLite input  shape: {inp[0]['shape']}")
+    log.info(f"TFLite output shape: {out[0]['shape']}")
+    log.info("TFLite verification: PASSED")
 
-# ── Step 7: Save model metadata ─────────────────────────────────────────────
-print("\n[6/6] Saving model metadata...")
+except Exception as e:
+    log.error(f"TFLite conversion failed: {e}")
+    log.error("The .h5 model is still saved — you can convert it later.")
+
+
+# ── Step 8: Save metadata ─────────────────────────────────────────────────────
+separator()
+log.info("[STEP 7] Saving model metadata...")
 
 metadata = {
-    "model_version": "1.0.0",
-    "trained_on": "IAM Handwriting Word Database (Kaggle)",
-    "samples_trained": int(len(y_labels)),
-    "rf_accuracy": float(rf_accuracy),
-    "rf_cv_mean": float(cv_scores.mean()),
-    "cnn_accuracy": float(cnn_results[1]),
-    "cnn_auc": float(cnn_results[2]),
-    "feature_count": int(X_features.shape[1]),
-    "img_size": list(IMG_SIZE),
-    "classes": ["normal", "dyslexia_indicator"],
-    "forensic_features": [
-        "height_variance", "width_variance", "area_variance",
-        "baseline_deviation", "spacing_irregularity", "component_count",
-        "component_ratio", "aspect_ratio_mean", "aspect_ratio_std",
-        "ink_density", "h_proj_variance", "v_proj_variance",
-        "stroke_width_mean", "stroke_width_std",
-        "horizontal_symmetry", "vertical_symmetry",
-        "corner_count", "contour_complexity",
-        "ascender_ratio", "lr_ratio"
-    ]
+    "model_version":    "1.0.0",
+    "trained_on":       "IAM Handwriting Word Database (Kaggle nibinv23)",
+    "training_date":    datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+    "samples_total":    int(len(y)),
+    "samples_normal":   int(np.sum(y == 0)),
+    "samples_indicator":int(np.sum(y == 1)),
+    "rf_accuracy":      float(round(rf_acc,  4)),
+    "rf_auc":           float(round(rf_auc,  4)),
+    "rf_cv_auc_mean":   float(round(cv_scores.mean(), 4)),
+    "rf_cv_auc_std":    float(round(cv_scores.std(),  4)),
+    "cnn_accuracy":     float(round(cnn_acc, 4)),
+    "cnn_auc":          float(round(cnn_auc, 4)),
+    "cnn_epochs":       int(actual_epochs),
+    "feature_count":    int(X_feat.shape[1]),
+    "feature_names":    FEATURE_NAMES,
+    "img_size":         list(IMG_SIZE),
+    "classes":          ["normal", "dyslexia_indicator"],
+    "machine":          "Ryzen 5, 16GB RAM, CPU-only",
 }
 
-with open(MODELS_PATH / 'model_metadata.json', 'w') as f:
-    json.dump(metadata, f, indent=2)
-print("Saved: models/model_metadata.json")
+(MODELS / 'model_metadata.json').write_text(
+    json.dumps(metadata, indent=2), encoding='utf-8'
+)
+log.info(f"Saved: {MODELS/'model_metadata.json'}")
 
-print("\n" + "=" * 60)
-print("TRAINING COMPLETE")
-print("=" * 60)
-print(f"RandomForest accuracy:  {rf_accuracy:.1%}")
-print(f"CNN accuracy:           {cnn_results[1]:.1%}")
-print(f"CNN AUC:                {cnn_results[2]:.3f}")
-print(f"\nModel files in: {MODELS_PATH}")
-print("  dyslexia_classifier.pkl  → Render FastAPI (RF model)")
-print("  feature_scaler.pkl       → Render FastAPI (feature scaler)")
-print("  dyslexia_cnn.h5          → Keras model backup")
-print("  dyslexia_cnn.tflite      → Firebase ML Custom Model")
-print("  model_metadata.json      → version tracking")
-print("\nNext: Upload dyslexia_cnn.tflite to Firebase ML Custom Models")
+
+# ── Final summary ─────────────────────────────────────────────────────────────
+separator()
+total_time = time.time() - t_start
+log.info("TRAINING COMPLETE")
+separator()
+log.info(f"Total time          : {total_time/60:.1f} minutes")
+log.info(f"Samples processed   : {len(y)}")
+log.info(f"")
+log.info(f"RandomForest:")
+log.info(f"  Accuracy          : {rf_acc*100:.2f}%")
+log.info(f"  AUC               : {rf_auc:.4f}")
+log.info(f"  CV AUC            : {cv_scores.mean():.4f} (+/- {cv_scores.std()*2:.4f})")
+log.info(f"")
+log.info(f"CNN (TFLite / Firebase ML):")
+log.info(f"  Accuracy          : {cnn_acc*100:.2f}%")
+log.info(f"  AUC               : {cnn_auc:.4f}")
+log.info(f"  Epochs            : {actual_epochs}")
+log.info(f"")
+log.info(f"Files saved to {MODELS}:")
+for f in sorted(MODELS.iterdir()):
+    size_kb = f.stat().st_size / 1024
+    log.info(f"  {f.name:40s} {size_kb:8.1f} KB")
+log.info(f"")
+log.info(f"Log saved to: {LOG_FILE}")
+log.info(f"Give training_log.txt to your developer for review.")
+separator()

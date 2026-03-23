@@ -6,4 +6,6 @@ data/
 models/*.pkl
 models/*.h5
 models/*.tflite
+models/*.png
 firebase_service_account.json
+training_log.txt
