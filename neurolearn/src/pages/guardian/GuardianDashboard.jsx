@@ -7,9 +7,10 @@ import OverviewTab from './OverviewTab';
 import HandwritingTab from './HandwritingTab';
 import ReportTab from './ReportTab';
 import BehaviourTab from './BehaviourTab';
+import LinkStudentModal from '@/components/LinkStudentModal';
 import {
   BookOpen, LogOut, LayoutDashboard, PenTool, FileText, Activity,
-  ChevronDown,
+  ChevronDown, UserPlus, Users,
 } from 'lucide-react';
 
 const TABS = [
@@ -25,6 +26,7 @@ export default function GuardianDashboard() {
   const [students, setStudents] = useState([]);
   const [selectedStudentId, setSelectedStudentId] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showLinkModal, setShowLinkModal] = useState(false);
 
   // Fetch linked students
   useEffect(() => {
@@ -79,27 +81,45 @@ export default function GuardianDashboard() {
           </div>
 
           <div className="flex items-center gap-4">
-            {/* Student selector */}
-            {students.length > 1 && (
-              <div className="relative">
-                <select
-                  value={selectedStudentId || ''}
-                  onChange={(e) => setSelectedStudentId(e.target.value)}
-                  className="appearance-none px-4 py-2 pr-8 rounded-lg border border-input bg-background text-sm font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-                >
-                  {students.map((s) => (
-                    <option key={s.id} value={s.uid || s.id}>
-                      {s.displayName || 'Student'}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+            {/* Student selector / Indicator */}
+            {students.length > 0 && (
+              <div className="flex items-center gap-2">
+                {students.length > 1 ? (
+                  <div className="relative">
+                    <select
+                      value={selectedStudentId || ''}
+                      onChange={(e) => setSelectedStudentId(e.target.value)}
+                      className="appearance-none px-4 py-2 pr-8 rounded-lg border border-input bg-background text-sm font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    >
+                      {students.map((s) => (
+                        <option key={s.id} value={s.uid || s.id}>
+                          {s.displayName || 'Student'}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted text-sm font-medium text-foreground">
+                    <Users className="w-4 h-4 text-muted-foreground" />
+                    <span>{students[0]?.displayName || 'Student'}</span>
+                  </div>
+                )}
               </div>
             )}
 
             <span className="text-sm text-muted-foreground hidden sm:block">
               {user?.displayName || user?.email}
             </span>
+            <button
+              onClick={() => setShowLinkModal(true)}
+              className="hidden md:flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-all font-medium text-sm"
+              title="Link a new student"
+            >
+              <UserPlus className="w-4 h-4" />
+              <span>Link Student</span>
+            </button>
+
             <button
               onClick={() => signOut(auth)}
               className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-all"
@@ -151,7 +171,14 @@ export default function GuardianDashboard() {
               <BookOpen className="w-8 h-8 text-muted-foreground" />
             </div>
             <h2 className="text-xl font-semibold text-foreground mb-2">No students linked</h2>
-            <p className="text-muted-foreground">Link a student to your account to view their progress.</p>
+            <p className="text-muted-foreground mb-6">Link a student to your account to view their progress.</p>
+            <button
+              onClick={() => setShowLinkModal(true)}
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl gradient-primary text-white font-medium hover:shadow-lg transition-all shadow-md group"
+            >
+              <UserPlus className="w-5 h-5 group-hover:scale-110 transition-transform" />
+              Link a Student
+            </button>
           </div>
         ) : (
           <>
@@ -167,6 +194,14 @@ export default function GuardianDashboard() {
           </>
         )}
       </main>
+
+      {showLinkModal && (
+        <LinkStudentModal
+          role="guardian"
+          onClose={() => setShowLinkModal(false)}
+          onSuccess={() => window.location.reload()}
+        />
+      )}
     </div>
   );
 }

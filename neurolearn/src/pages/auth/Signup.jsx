@@ -67,12 +67,12 @@ export default function Signup() {
     setSelectedRole('');
   };
 
-  const createUserDocument = async (uid, name) => {
+  const createUserDocument = async (uid, name, userEmail) => {
     const userData = {
       uid: uid,
       role: selectedRole,
       displayName: name,
-      email: email || auth.currentUser?.email,
+      email: userEmail ?? auth.currentUser?.email ?? email ?? '',
       createdAt: serverTimestamp(),
       linkedStudentIds: [],
       consentGiven: selectedRole === 'guardian',
@@ -89,11 +89,11 @@ export default function Signup() {
     try {
       if (fromGoogle && googleUid) {
         // Google user just picking role
-        await createUserDocument(googleUid, auth.currentUser?.displayName || displayName);
+        await createUserDocument(googleUid, auth.currentUser?.displayName || displayName, auth.currentUser?.email);
       } else {
         const result = await createUserWithEmailAndPassword(auth, email, password);
         await updateProfile(result.user, { displayName });
-        await createUserDocument(result.user.uid, displayName);
+        await createUserDocument(result.user.uid, displayName, result.user.email);
       }
 
       switch (selectedRole) {
@@ -103,6 +103,7 @@ export default function Signup() {
         default: navigate('/');
       }
     } catch (err) {
+      console.error('Signup error full details:', err.code, err.message, err);
       setError(
         err.code === 'auth/email-already-in-use'
           ? 'This email is already registered. Try signing in instead.'
@@ -177,10 +178,9 @@ export default function Signup() {
                     type="text"
                     value={displayName}
                     onChange={(e) => setDisplayName(e.target.value)}
-                    className="w-full px-4 py-3 rounded-lg border border-input bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all"
+                    className="w-full px-4 py-3 rounded-lg border border-input bg-white text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all"
                     placeholder="Enter your full name"
                     required={!fromGoogle}
-                    disabled={fromGoogle}
                   />
                 </div>
 
@@ -195,7 +195,7 @@ export default function Signup() {
                         type="email"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
-                        className="w-full px-4 py-3 rounded-lg border border-input bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all"
+                        className="w-full px-4 py-3 rounded-lg border border-input bg-white text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all"
                         placeholder="you@example.com"
                         required
                       />
@@ -210,7 +210,7 @@ export default function Signup() {
                         type="password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
-                        className="w-full px-4 py-3 rounded-lg border border-input bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all"
+                        className="w-full px-4 py-3 rounded-lg border border-input bg-white text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all"
                         placeholder="At least 6 characters"
                         required
                         minLength={6}

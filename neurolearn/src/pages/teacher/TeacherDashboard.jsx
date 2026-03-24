@@ -7,8 +7,9 @@ import AssignExercise from './AssignExercise';
 import RiskDistribution from '@/components/charts/RiskDistribution';
 import {
   BookOpen, LogOut, ChevronDown, ChevronUp, ClipboardList,
-  AlertCircle, CheckCircle, Clock, Users,
+  AlertCircle, CheckCircle, Clock, Users, UserPlus
 } from 'lucide-react';
+import LinkStudentModal from '@/components/LinkStudentModal';
 
 function getRiskLevel(score) {
   if (score > 0.6) return { level: 'High', color: 'bg-risk-high', textColor: 'text-risk-high' };
@@ -22,6 +23,7 @@ export default function TeacherDashboard() {
   const [expandedStudent, setExpandedStudent] = useState(null);
   const [assignStudent, setAssignStudent] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showLinkModal, setShowLinkModal] = useState(false);
 
   useEffect(() => {
     if (!user?.uid) return;
@@ -135,12 +137,30 @@ export default function TeacherDashboard() {
             {/* Top row — stats + chart */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="lg:col-span-2">
-                <h2 className="text-xl font-bold text-foreground mb-4">Class Roster</h2>
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-bold text-foreground">Class Roster</h2>
+                  {students.length > 0 && (
+                    <button
+                      onClick={() => setShowLinkModal(true)}
+                      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-primary/20 bg-primary/5 text-primary hover:bg-primary/10 transition-all font-medium text-xs"
+                    >
+                      <UserPlus className="w-3.5 h-3.5" />
+                      Link Student
+                    </button>
+                  )}
+                </div>
 
                 {students.length === 0 ? (
                   <div className="text-center py-12 bg-card rounded-xl border border-border">
                     <Users className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-                    <p className="text-muted-foreground">No students assigned to your class yet.</p>
+                    <p className="text-muted-foreground mb-4">No students assigned to your class yet.</p>
+                    <button
+                      onClick={() => setShowLinkModal(true)}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white hover:bg-primary-dark transition-all font-medium text-sm shadow-sm"
+                    >
+                      <UserPlus className="w-4 h-4" />
+                      Link a Student
+                    </button>
                   </div>
                 ) : (
                   <div className="bg-card rounded-xl border border-border overflow-hidden shadow-sm">
@@ -241,6 +261,14 @@ export default function TeacherDashboard() {
           studentId={assignStudent.uid}
           studentName={assignStudent.displayName || 'Student'}
           onClose={() => setAssignStudent(null)}
+        />
+      )}
+
+      {showLinkModal && (
+        <LinkStudentModal
+          role="teacher"
+          onClose={() => setShowLinkModal(false)}
+          onSuccess={() => window.location.reload()}
         />
       )}
     </div>

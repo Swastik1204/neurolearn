@@ -52,7 +52,7 @@ const useAuthStore = create((set, get) => ({
             });
           }
         } catch (error) {
-          console.error('Error fetching user data:', error.message);
+          console.error('Signup error full details (authStore):', error.code, error.message, error);
           set({ user: null, role: null, studentIds: [], loading: false });
         }
       } else {
