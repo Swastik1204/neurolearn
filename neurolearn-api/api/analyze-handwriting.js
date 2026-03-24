@@ -16,19 +16,19 @@ export default async function handler(req, res) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const { sampleId, imageUrl, studentId, strokeMetadata } = req.body;
+    const { sampleId, imageBase64, studentId, strokeMetadata } = req.body;
 
-    if (!sampleId || !imageUrl || !studentId) {
-      return res.status(400).json({ error: 'Missing required fields: sampleId, imageUrl, studentId' });
+    if (!sampleId || !imageBase64 || !studentId) {
+      return res.status(400).json({ error: 'Missing required fields: sampleId, imageBase64, studentId' });
     }
 
-    // Update sample status to processing
+    // Update sample status to processing and store imageBase64
     await adminDb.collection('handwritingSamples').doc(sampleId).update({
       analysisStatus: 'processing',
+      imageBase64
     });
 
-    // Enqueue analysis task (calling ML service directly for simplicity — 
-    // in production, use Firebase Cloud Tasks for reliable delivery)
+    // Enqueue analysis task
     const mlServiceUrl = process.env.ML_SERVICE_URL;
     if (mlServiceUrl) {
       try {
@@ -38,7 +38,7 @@ export default async function handler(req, res) {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            image_url: imageUrl,
+            image_base64: imageBase64,
             sample_id: sampleId,
             stroke_metadata: strokeMetadata || {},
           }),

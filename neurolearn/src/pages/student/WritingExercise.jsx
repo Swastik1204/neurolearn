@@ -1,8 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { storage, db } from '@/services/firebase';
+import { db } from '@/services/firebase';
 import useCurrentUser from '@/hooks/useCurrentUser';
 import WritingCanvas from '@/components/canvas/WritingCanvas';
 import TextToSpeech from '@/components/TextToSpeech';
@@ -61,30 +60,30 @@ export default function WritingExercise() {
         "You're a star! Well done! 🌈",
       ];
       setSubmitFeedback(encouragements[Math.floor(Math.random() * encouragements.length)]);
-      // Upload PNG to Firebase Storage
-      const studentId = user?.uid || 'anonymous';
-      const timestamp = Date.now();
-      const storageRef = ref(storage, `handwriting/${studentId}/${sessionId}/${timestamp}.png`);
-      await uploadBytes(storageRef, imageBlob);
-      const imageUrl = await getDownloadURL(storageRef);
+      // Convert canvas to Base64 PNG instead of uploading to Storage
+      // The imageBlob is already captured by the canvas, but we want the DataURL for easy transfer
+      const canvas = document.querySelector('canvas');
+      const imageBase64 = canvas ? canvas.toDataURL('image/png') : null;
 
-      // Save handwriting sample to Firestore
+      const studentId = user?.uid || 'anonymous';
+      
+      // Save handwriting sample to Firestore with Base64 data
       const sampleDoc = await addDoc(collection(db, 'handwritingSamples'), {
         studentId,
         sessionId,
         capturedAt: serverTimestamp(),
-        imageUrl,
+        imageBase64,
         promptWord: currentWord,
         strokeMetadata,
         analysisStatus: 'pending',
         analysisResult: {},
       });
 
-      // POST to API for analysis
+      // POST to API for analysis with Base64 data
       try {
         await analyzeHandwriting({
           sampleId: sampleDoc.id,
-          imageUrl,
+          imageBase64,
           studentId,
           strokeMetadata,
         });
