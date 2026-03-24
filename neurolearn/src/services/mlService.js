@@ -18,8 +18,7 @@ import * as tf from '@tensorflow/tfjs';
 const MODEL_ID = '12345678';
 const PROJECT_ID = 'neurolearn-tutor-app';
 
-const FIREBASE_ML_MODEL_URL =
-  'https://raw.githubusercontent.com/Swastik1204/neurolearn/main/neurolearn-ml/models/dyslexia_cnn.tflite';
+const FIREBASE_ML_MODEL_URL = '/dyslexia_cnn.tflite';
 
 let model = null;
 let modelLoading = false;
