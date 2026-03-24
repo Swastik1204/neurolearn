@@ -9,3 +9,4 @@ models/*.tflite
 models/*.png
 firebase_service_account.json
 training_log.txt
+models/*.tflite
