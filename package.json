@@ -1,0 +1,17 @@
+{
+  "name": "neurolearn-workspace",
+  "private": true,
+  "description": "Centralized workspace for NeuroLearn Frontend, API, and ML services.",
+  "scripts": {
+    "setup": "npm run setup:frontend && npm run setup:api && npm run setup:ml",
+    "setup:frontend": "cd neurolearn && npm install",
+    "setup:api": "cd neurolearn-api && npm install",
+    "setup:ml": "cd neurolearn-ml && pip install -r requirements.txt",
+    "dev": "echo 'Run dev:frontend, dev:api, and dev:ml in separate terminals.'",
+    "dev:frontend": "cd neurolearn && npm run dev",
+    "dev:api": "cd neurolearn-api && vercel dev",
+    "dev:ml": "cd neurolearn-ml && uvicorn main:app --reload --port 8000",
+    "deploy:rules": "cd neurolearn && firebase deploy --only firestore:rules",
+    "deploy:hosting": "cd neurolearn && npm run deploy"
+  }
+}
