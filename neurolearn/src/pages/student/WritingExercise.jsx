@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
@@ -8,6 +8,7 @@ import WritingCanvas from '@/components/canvas/WritingCanvas';
 import TextToSpeech from '@/components/TextToSpeech';
 import FocusMode from '@/components/FocusMode';
 import { analyzeHandwriting } from '@/services/api';
+import { preloadDyslexiaModel, analyzeHandwritingLocally } from '../../services/mlService';
 import { BookOpen, ArrowLeft, ChevronRight } from 'lucide-react';
 
 const PROMPTS = ['bed', 'dog', 'was', 'saw', 'pat', 'tap', 'no', 'on', 'bid', 'dib'];
@@ -19,6 +20,15 @@ export default function WritingExercise() {
   const [sessionId] = useState(() => `session_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`);
   const [wordTimings, setWordTimings] = useState([]);
   const startTimeRef = useRef(null);
+
+  const [localRiskScore, setLocalRiskScore] = useState(null);
+  const [localRiskLevel, setLocalRiskLevel] = useState(null);
+  const [submitFeedback, setSubmitFeedback] = useState("");
+
+  // Preload TFLite model in background when exercise page loads
+  useEffect(() => {
+    preloadDyslexiaModel();
+  }, []);
 
   const currentWord = PROMPTS[currentIndex];
   const isLastWord = currentIndex === PROMPTS.length - 1;
@@ -32,6 +42,25 @@ export default function WritingExercise() {
     setWordTimings((prev) => [...prev, { word: currentWord, durationMs: duration }]);
 
     try {
+      // Run instant on-device TFLite analysis
+      const img = new Image();
+      img.src = URL.createObjectURL(imageBlob);
+      await new Promise(r => img.onload = r);
+      const localResult = await analyzeHandwritingLocally(img);
+      if (localResult) {
+        setLocalRiskScore(localResult.riskScore);
+        setLocalRiskLevel(localResult.riskLevel);
+        console.log('[NeuroLearn ML] Local score:', localResult.riskScore, '| Level:', localResult.riskLevel);
+      }
+      
+      const encouragements = [
+        "Great job! Keep writing! 🌟",
+        "Wonderful! You're doing amazing! ⭐",
+        "Excellent work! Keep it up! 🎉",
+        "Fantastic effort! 💪",
+        "You're a star! Well done! 🌈",
+      ];
+      setSubmitFeedback(encouragements[Math.floor(Math.random() * encouragements.length)]);
       // Upload PNG to Firebase Storage
       const studentId = user?.uid || 'anonymous';
       const timestamp = Date.now();
