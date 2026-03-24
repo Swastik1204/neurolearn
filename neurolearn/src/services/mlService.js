@@ -19,7 +19,7 @@ const MODEL_ID = '12345678';
 const PROJECT_ID = 'neurolearn-tutor-app';
 
 const FIREBASE_ML_MODEL_URL =
-  `https://firebaseml.googleapis.com/v1beta2/projects/${PROJECT_ID}/models/${MODEL_ID}:download?alt=media`;
+  'https://raw.githubusercontent.com/Swastik1204/neurolearn/main/neurolearn-ml/models/dyslexia_cnn.tflite';
 
 let model = null;
 let modelLoading = false;
