@@ -27,6 +27,7 @@ export default function BehaviourTab({ studentId }) {
 
   const latestSnapshot = behaviourSnapshots[0];
   const focusDrop = latestSnapshot?.focusDrop || false;
+  const performanceTrend = latestSnapshot?.performanceTrend || 'stable';
 
   if (loading) {
     return (

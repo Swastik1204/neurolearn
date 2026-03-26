@@ -29,9 +29,9 @@ export default function WritingExercise() {
   const [wordTimings, setWordTimings] = useState([]);
   const startTimeRef = useRef(null);
 
-  const [localRiskScore, setLocalRiskScore] = useState(null);
-  const [localRiskLevel, setLocalRiskLevel] = useState(null);
-  const [submitFeedback, setSubmitFeedback] = useState("");
+  const [isAnalysing, setIsAnalysing] = useState(false);
+  const [letterFeedback, setLetterFeedback] = useState(null);
+  const [letterResults, setLetterResults] = useState([]);
 
   // Initialization if any (mlService handled)
   useEffect(() => {
@@ -46,33 +46,17 @@ export default function WritingExercise() {
     // Calculate time for this word
     const endTime = Date.now();
     const duration = startTimeRef.current ? endTime - startTimeRef.current : 0;
-
     setWordTimings((prev) => [...prev, { word: currentWord, durationMs: duration }]);
 
+    setIsAnalysing(true);
+
     try {
-      // Local analysis is now server-only (asynchronous)
-      const localResult = await mlService.analyzeHandwriting(null); // canvas not needed for mock
-      if (localResult) {
-        setLocalRiskScore(localResult.riskScore);
-        setLocalRiskLevel(localResult.riskLevel);
-      }
-      
-      const encouragements = [
-        "Great job! Keep writing! 🌟",
-        "Wonderful! You're doing amazing! ⭐",
-        "Excellent work! Keep it up! 🎉",
-        "Fantastic effort! 💪",
-        "You're a star! Well done! 🌈",
-      ];
-      setSubmitFeedback(encouragements[Math.floor(Math.random() * encouragements.length)]);
-      // Convert canvas to Base64 PNG instead of uploading to Storage
-      // The imageBlob is already captured by the canvas, but we want the DataURL for easy transfer
+      // Capture canvas DataURL
       const canvas = document.querySelector('canvas');
       const imageBase64 = canvas ? canvas.toDataURL('image/png') : null;
-
       const studentId = user?.uid || 'anonymous';
-      
-      // Save handwriting sample to Firestore with Base64 data
+
+      // Save handwriting sample to Firestore
       const sampleDoc = await addDoc(collection(db, 'handwritingSamples'), {
         studentId,
         sessionId,
@@ -88,67 +72,148 @@ export default function WritingExercise() {
         analysisResult: {},
       });
 
-      // POST to API for analysis with Base64 data
-      try {
-        await analyzeHandwriting({
-          sampleId: sampleDoc.id,
-          imageBase64,
-          studentId,
-          strokeMetadata,
-        });
-      } catch (apiError) {
-        // Don't block the student if API is unavailable
-        console.error('API call failed (non-blocking):', apiError.message);
-      }
-    } catch (error) {
-      console.error('Upload failed:', error.message);
-    }
-
-    // Move to next word or complete
-    if (isLastWord) {
-      // Save session to Firestore
-      try {
-        const totalDuration = wordTimings.reduce((sum, w) => sum + w.durationMs, 0) + duration;
-        await addDoc(collection(db, 'sessions'), {
-          studentId: user?.uid || 'anonymous',
-          startedAt: serverTimestamp(),
-          endedAt: serverTimestamp(),
-          exerciseType: 'writing',
-          durationMs: totalDuration,
-          completionRate: 1.0,
-          errorCorrectionCount: 0,
-          pauseEvents: [],
-          deviceType: navigator.maxTouchPoints > 0 ? 'touch' : 'mouse',
-          timeOfDay: new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 17 ? 'afternoon' : 'evening',
-          letterCount: prompts.length,
-          exerciseMode: 'single_letter'
-        });
-      } catch (err) {
-        console.error('Session save failed:', err.message);
-      }
-      navigate('/student/complete', { 
-        state: { 
-          score: localRiskScore ?? null, 
-          level: localRiskLevel ?? 'Pending server analysis'
-        } 
+      // API call with 2s timeout logic for feedback
+      const apiPromise = analyzeHandwriting({
+        sampleId: sampleDoc.id,
+        imageBase64,
+        studentId,
+        letter: currentWord.toLowerCase(),
+        strokeMetadata,
       });
-    } else {
-      setCurrentIndex((prev) => prev + 1);
-      startTimeRef.current = null;
+
+      // We wait for the API but also have a fallback for the UI
+      let result = null;
+      try {
+        // Race the API against a 2.5s timeout for feedback purposes
+        result = await Promise.race([
+          apiPromise,
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2500))
+        ]);
+      } catch (e) {
+        console.log('API feedback timeout or error, showing pending...');
+      }
+
+      setIsAnalysing(false);
+      
+      const feedback = result ? {
+        risk_level: result.risk_level,
+        letter: currentWord,
+        note: result.letter_specific?.note || ""
+      } : {
+        risk_level: 'pending',
+        letter: currentWord,
+        note: "Analysis in progress..."
+      };
+
+      setLetterFeedback(feedback);
+      setLetterResults(prev => [...prev, feedback]);
+
+      // Wait 2 seconds for feedback display, then move on
+      setTimeout(() => {
+        setLetterFeedback(null);
+        if (isLastWord) {
+          finishSession(duration);
+        } else {
+          setCurrentIndex((prev) => prev + 1);
+          startTimeRef.current = null;
+        }
+      }, 2000);
+
+    } catch (error) {
+      console.error('Submission failed:', error.message);
+      setIsAnalysing(false);
+      // Fallback: move on anyway
+      if (isLastWord) finishSession(duration);
+      else setCurrentIndex(prev => prev + 1);
     }
+  };
+
+  const finishSession = async (lastDuration) => {
+    try {
+      const totalDuration = wordTimings.reduce((sum, w) => sum + w.durationMs, 0) + lastDuration;
+      await addDoc(collection(db, 'sessions'), {
+        studentId: user?.uid || 'anonymous',
+        startedAt: serverTimestamp(),
+        endedAt: serverTimestamp(),
+        exerciseType: 'writing',
+        durationMs: totalDuration,
+        completionRate: 1.0,
+        errorCorrectionCount: 0,
+        pauseEvents: [],
+        deviceType: navigator.maxTouchPoints > 0 ? 'touch' : 'mouse',
+        timeOfDay: new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 17 ? 'afternoon' : 'evening',
+        letterCount: prompts.length,
+        exerciseMode: 'single_letter'
+      });
+    } catch (err) {
+      console.error('Session save failed:', err.message);
+    }
+    navigate('/student/complete', { state: { letterResults: [...letterResults] } });
   };
 
   // Start timer on first interaction with a new word
   const handleCanvasInteraction = () => {
-    if (!startTimeRef.current) {
+    if (!startTimeRef.current && !isAnalysing && !letterFeedback) {
       startTimeRef.current = Date.now();
     }
   };
 
   const exerciseContent = (
-    <div className="w-full" onPointerDown={handleCanvasInteraction}>
+    <div className="w-full relative" onPointerDown={handleCanvasInteraction}>
+      {/* Analysing Spinner Overlay */}
+      {isAnalysing && (
+        <div className="absolute inset-0 z-40 bg-background/60 backdrop-blur-sm flex items-center justify-center rounded-2xl animate-fade-in">
+          <div className="text-center">
+            <div className="w-12 h-12 border-4 border-primary/30 border-t-primary rounded-full animate-spin mx-auto mb-4" />
+            <p className="font-bold text-primary animate-pulse text-lg">Analysing...</p>
+          </div>
+        </div>
+      )}
+
+      {/* Feedback Overlay */}
+      {letterFeedback && (
+        <div className="absolute inset-0 z-40 bg-background/80 backdrop-blur-md flex items-center justify-center rounded-2xl animate-scale-in">
+          <div className={`p-8 rounded-3xl border-4 text-center max-w-xs w-full shadow-2xl ${
+            letterFeedback.risk_level === 'low' ? 'bg-success/10 border-success text-success' :
+            letterFeedback.risk_level === 'medium' ? 'bg-warning/10 border-warning text-warning' :
+            letterFeedback.risk_level === 'high' ? 'bg-destructive/10 border-destructive text-destructive' :
+            'bg-muted border-muted text-muted-foreground'
+          }`}>
+            <span className="text-6xl mb-4 block animate-bounce">
+              {letterFeedback.risk_level === 'low' ? '🌟' : 
+               letterFeedback.risk_level === 'medium' ? '👍' : 
+               letterFeedback.risk_level === 'high' ? '💪' : '⏳'}
+            </span>
+            <h3 className="text-2xl font-black mb-2">
+              {letterFeedback.risk_level === 'low' ? `Great ${letterFeedback.letter}!` :
+               letterFeedback.risk_level === 'medium' ? 'Good try!' :
+               letterFeedback.risk_level === 'high' ? `Practice ${letterFeedback.letter} again` : 
+               'Working...'}
+            </h3>
+            <p className="text-sm font-medium opacity-90">
+              {letterFeedback.risk_level === 'low' ? 'Clean formation.' :
+               letterFeedback.risk_level === 'medium' ? `Watch your ${letterFeedback.letter} shape.` :
+               letterFeedback.note || "Analysis in progress..."
+              }
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Prompt */}
       <div className="text-center mb-10">
+        <div className="flex justify-center gap-2 mb-6">
+          {prompts.map((_, idx) => (
+            <div 
+              key={idx}
+              className={`w-3 h-3 rounded-full transition-all duration-300 ${
+                idx === currentIndex ? 'bg-primary scale-125' :
+                idx < currentIndex ? 'bg-primary/40' : 'bg-muted border border-border'
+              }`}
+            />
+          ))}
+        </div>
+
         <p className="text-lg text-muted-foreground mb-4 font-medium italic">Trace this letter:</p>
         <div className="flex flex-col items-center justify-center gap-6">
           <span 
@@ -167,8 +232,10 @@ export default function WritingExercise() {
 
       {/* Canvas */}
       <WritingCanvas
+        key={currentIndex}
         prompt={currentWord}
         onSubmit={handleSubmit}
+        disabled={isAnalysing || !!letterFeedback}
       />
     </div>
   );

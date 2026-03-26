@@ -72,3 +72,35 @@ Never use clinical or alarming language.`;
   const result = await model.generateContent(prompt);
   return result.response.text();
 }
+
+/**
+ * Generate a short 2-sentence interpretation of a specific letter result for parents.
+ */
+export async function generateHandwritingInterpretation(data) {
+  const { letter, scores, letter_specific, studentName } = data;
+  
+  const prompt = `You are a specialist in children's handwriting 
+assessment. A child named ${studentName} just traced the letter 
+"${letter}". Here are the analysis scores (0-100, where 100 is excellent):
+- Letter form: ${scores.letterFormScore}
+- Spacing: ${scores.spacingScore}  
+- Baseline: ${scores.baselineScore}
+- Reversal risk: ${scores.reversalScore}
+- Overall risk (0-1 Scale): ${scores.overallRisk}
+${letter_specific ? `Letter-specific diagnostic: ${JSON.stringify(letter_specific)}` : ''}
+
+Write exactly 2 sentences for the child's parent:
+1. What this specific letter result shows about the child's writing (e.g., strong symmetry, needs more steady hand)
+2. One practical suggestion for improvement (e.g., trace in sand, use a guided line)
+
+Be warm, specific, and encouraging. Do not use clinical language.
+Do not start with "I" or repeat the child's name twice. Do not include markdown formatting or quotes.`;
+
+  try {
+    const result = await model.generateContent(prompt);
+    return result.response.text().trim();
+  } catch (error) {
+    console.error('Gemini interpretation error:', error.message);
+    return `Great effort on the letter ${letter}! Keep practicing to build muscle memory and improve formation.`;
+  }
+}

@@ -53,13 +53,17 @@ async def load_models():
 class AnalyzeRequest(BaseModel):
     image_base64: str
     sample_id: str
+    letter: str = ""  # The specific letter being analyzed
     stroke_metadata: dict = {}
 
 class AnalyzeResponse(BaseModel):
     sample_id: str
+    overall_risk: float
+    risk_level: str
+    letter: str
     scores: dict
     indicators: dict
-    risk_level: str
+    letter_specific: dict = {}
 
 # ── Image preprocessing (same as training) ────────────────────────────────────
 def preprocess_image_from_bytes(img_bytes):
@@ -181,10 +185,12 @@ async def analyze(req: AnalyzeRequest):
             risk_proba = float(proba[1])  # probability of dyslexia indicator
 
             # Incorporate stroke timing metadata
-            pause_ratio = req.stroke_metadata.get('pauseRatio', 0)
-            speed_variance = req.stroke_metadata.get('speedVariance', 0)
-            timing_risk = min(pause_ratio * 0.4 + speed_variance * 0.1, 0.3)
-            combined_risk = min(risk_proba * 0.7 + timing_risk, 1.0)
+            pause_ratio = float(req.stroke_metadata.get('pauseRatio', 0))
+            speed_variance = float(req.stroke_metadata.get('speedVariance', 0))
+            t_risk = pause_ratio * 0.4 + speed_variance * 0.1
+            timing_risk = float(t_risk if t_risk < 0.3 else 0.3)
+            c_risk = risk_proba * 0.7 + timing_risk
+            combined_risk = float(c_risk if c_risk < 1.0 else 1.0)
         else:
             # Fallback when model not loaded
             combined_risk = 0.3
@@ -192,19 +198,35 @@ async def analyze(req: AnalyzeRequest):
 
         # Compute individual dimension scores (0–100)
         f = raw_features
-        letter_form_score = max(0, 100 - (f[0] * 80 + f[1] * 20))
-        spacing_score = max(0, 100 - (f[4] * 100))
-        baseline_score = max(0, 100 - (f[3] * 150))
-        reversal_score = min(100, (f[14] * 40 + abs(f[19] - 1.0) * 60))
+        lf_score = 100.0 - (f[0] * 80.0 + f[1] * 20.0)
+        letter_form_score = float(lf_score if lf_score > 0.0 else 0.0)
+        
+        sp_score = 100.0 - (f[4] * 100.0)
+        spacing_score = float(sp_score if sp_score > 0.0 else 0.0)
+        
+        bs_score = 100.0 - (f[3] * 150.0)
+        baseline_score = float(bs_score if bs_score > 0.0 else 0.0)
+        
+        rev_val = f[14] * 40.0 + abs(f[19] - 1.0) * 60.0
+        reversal_score = float(rev_val if rev_val < 100.0 else 100.0)
 
-        # Build indicators
+        # Build indicators (aligned with webhook expectations)
+        rev_list = []
+        if f[14] > 0.7:
+            rev_list.append({"confidence": float(f[14]), "type": "horizontal_symmetry"})
+            
+        om_list = []
+        if f[6] < 0.5:
+            om_list.append({"type": "missing_strokes"})
+
         indicators = {
-            "reversals": [{"confidence": float(f[14]), "type": "horizontal_symmetry"}]
-                         if f[14] > 0.7 else [],
-            "baselineDrift": float(f[3]) > 0.3,
-            "sizingInconsistency": float(f[0]) > 0.4,
-            "spacingIrregularity": float(f[4]) > 0.5,
-            "omissionRisk": float(f[6]) < 0.5,
+            "reversals": rev_list,
+            "omissions": om_list,
+            "substitutions": [],
+            "sequencing_errors": [],
+            "baselineDrift": bool(f[3] > 0.3),
+            "sizingInconsistency": bool(f[0] > 0.4),
+            "spacingIrregularity": bool(f[4] > 0.5),
         }
 
         risk_level = (
@@ -216,17 +238,56 @@ async def analyze(req: AnalyzeRequest):
         # Callback to Vercel webhook
         webhook_url = os.getenv("VERCEL_WEBHOOK_URL")
         webhook_secret = os.getenv("ML_WEBHOOK_SECRET")
+        
+        # Calculate letter_specific logic
+        letter_specific = {}
+        target_letter = req.letter.lower()
+        
+        if target_letter in ['b', 'd']:
+            # b/d reversals often show high horizontal symmetry (matching their mirror)
+            h_sym = float(f[14])
+            reversal_val = "High" if h_sym > 0.7 else "Medium" if h_sym > 0.5 else "Low"
+            letter_specific = {
+                "reversal_risk": reversal_val,
+                "note": "Possible b/d confusion detected" if h_sym > 0.7 else None
+            }
+        elif target_letter in ['p', 'q']:
+            # p/q reversals
+            h_sym = float(f[14])
+            reversal_val = "High" if h_sym > 0.7 else "Medium" if h_sym > 0.5 else "Low"
+            letter_specific = {
+                "reversal_risk": reversal_val,
+                "note": "Possible p/q confusion detected" if h_sym > 0.7 else None
+            }
+        elif target_letter in ['g', 'y']:
+            # g/y confusion often involves descender issues (f[18] is top/bottom ratio)
+            desc_ratio = float(f[18])
+            quality = "Good" if desc_ratio > 0.8 else "Fair" if desc_ratio > 0.5 else "Needs Practice"
+            letter_specific = {
+                "descender_quality": quality,
+                "note": "Monitor tail formation" if desc_ratio < 0.6 else None
+            }
+        elif target_letter in ['f', 'h', 'n', 'm']:
+            # stroke consistency (f[0] is height std, f[5] is component count)
+            consistency = "High" if f[0] < 0.2 else "Medium" if f[0] < 0.4 else "Low"
+            letter_specific = {
+                "stroke_consistency": consistency,
+                "note": "Letter height varies" if f[0] > 0.3 else None
+            }
+
         if webhook_url and webhook_secret:
             payload = {
                 "sampleId": req.sample_id,
+                "letter": target_letter,
                 "scores": {
-                    "letterFormScore": round(letter_form_score, 1),
-                    "spacingScore": round(spacing_score, 1),
-                    "baselineScore": round(baseline_score, 1),
-                    "reversalScore": round(reversal_score, 1),
-                    "overallRisk": round(combined_risk, 3),
+                    "letterFormScore": float(f"{letter_form_score:.1f}"),
+                    "spacingScore": float(f"{spacing_score:.1f}"),
+                    "baselineScore": float(f"{baseline_score:.1f}"),
+                    "reversalScore": float(f"{reversal_score:.1f}"),
+                    "overallRisk": float(f"{combined_risk:.3f}"),
                 },
                 "indicators": indicators,
+                "letter_specific": letter_specific,
                 "rawFeatures": {f"f{i}": v for i, v in enumerate(raw_features)},
             }
             try:
@@ -242,15 +303,18 @@ async def analyze(req: AnalyzeRequest):
 
         return AnalyzeResponse(
             sample_id=req.sample_id,
+            overall_risk=float(f"{combined_risk:.3f}"),
+            risk_level=risk_level,
+            letter=target_letter,
             scores={
-                "letterFormScore": round(letter_form_score, 1),
-                "spacingScore": round(spacing_score, 1),
-                "baselineScore": round(baseline_score, 1),
-                "reversalScore": round(reversal_score, 1),
-                "overallRisk": round(combined_risk, 3),
+                "letterFormScore": float(f"{letter_form_score:.1f}"),
+                "spacingScore": float(f"{spacing_score:.1f}"),
+                "baselineScore": float(f"{baseline_score:.1f}"),
+                "reversalScore": float(f"{reversal_score:.1f}"),
+                "overallRisk": float(f"{combined_risk:.3f}"),
             },
             indicators=indicators,
-            risk_level=risk_level,
+            letter_specific=letter_specific,
         )
 
     except HTTPException:

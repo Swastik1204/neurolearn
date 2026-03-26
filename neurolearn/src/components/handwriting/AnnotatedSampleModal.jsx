@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { X, AlertTriangle, CheckCircle } from 'lucide-react';
+import { X, AlertTriangle, CheckCircle, Star } from 'lucide-react';
 import ScoreBar from '@/components/charts/ScoreBar';
 
 export default function AnnotatedSampleModal({ sample, analysisResult, onClose }) {
@@ -143,6 +143,19 @@ export default function AnnotatedSampleModal({ sample, analysisResult, onClose }
 
               {/* Score breakdown */}
               <ScoreBar data={scoreData} label="Score Breakdown" color="#5B4FCF" />
+
+              {/* AI Interpretation */}
+              {analysisResult.geminiInterpretation && (
+                <div className="p-4 bg-primary/5 border border-primary/20 rounded-xl">
+                  <h4 className="font-bold text-sm text-primary mb-2 flex items-center gap-2">
+                    <Star className="w-4 h-4 fill-primary" />
+                    AI Interpretation
+                  </h4>
+                  <p className="text-sm text-foreground italic leading-relaxed">
+                    "{analysisResult.geminiInterpretation}"
+                  </p>
+                </div>
+              )}
 
               {/* Detailed indicators list */}
               {indicators.reversals?.length > 0 && (

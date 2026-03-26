@@ -3,47 +3,93 @@ import { PartyPopper, Home, RotateCcw, Star } from 'lucide-react';
 
 export default function ExerciseComplete() {
   const location = useLocation();
-  const { score, level } = location.state || { score: null, level: null };
+  const { letterResults } = location.state || { letterResults: [] };
+
+  const highRiskLetters = letterResults
+    .filter(r => r.risk_level === 'high')
+    .map(r => r.letter);
+
   return (
-    <div className="min-h-screen bg-background student-view flex items-center justify-center px-6">
-      <div className="text-center animate-fade-in max-w-md">
-        <div className="w-24 h-24 rounded-full gradient-accent flex items-center justify-center mx-auto mb-8 shadow-xl animate-scale-in">
+    <div className="min-h-screen bg-background student-view flex items-center justify-center py-12 px-6">
+      <div className="text-center animate-fade-in max-w-2xl w-full">
+        <div className="w-24 h-24 rounded-full gradient-accent flex items-center justify-center mx-auto mb-6 shadow-xl animate-scale-in">
           <PartyPopper className="w-12 h-12 text-white" />
         </div>
 
-        <h1 className="text-4xl font-bold text-foreground mb-2">
+        <h1 className="text-4xl font-bold text-foreground mb-4">
           Great job! 🎉
         </h1>
 
-        {score !== null ? (
-          <div className="mb-8 p-6 bg-card rounded-2xl border-2 border-primary/20 shadow-sm animate-slide-up">
-            <div className="flex items-center justify-center gap-2 mb-2">
-              <Star className="w-5 h-5 text-primary fill-primary" />
-              <span className="font-bold text-foreground uppercase tracking-wider text-sm">Session Score</span>
-            </div>
-            <div className="text-5xl font-black text-primary mb-1">
-              {Math.round((1 - score) * 100)}%
-            </div>
-            <div className={`text-sm font-semibold px-3 py-1 rounded-full inline-block ${
-              level === 'low' ? 'bg-success/10 text-success' : 
-              level === 'medium' ? 'bg-warning/10 text-warning' : 'bg-destructive/10 text-destructive'
-            }`}>
-              {level === 'low' ? 'Excellent Form' : level === 'medium' ? 'Good Effort' : 'Keep Practicing'}
-            </div>
+        <p className="text-lg text-muted-foreground mb-10 leading-relaxed max-w-md mx-auto">
+          {letterResults.length > 0 
+            ? `You finished all ${letterResults.length} letters! Here is how you did today.`
+            : "You finished all the letter tracing exercises! You're doing amazing."}
+        </p>
+
+        {letterResults.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-10">
+            {/* Summary Highlights */}
+            {highRiskLetters.length > 0 && (
+              <div className="sm:col-span-2 bg-destructive/5 border border-destructive/20 rounded-2xl p-4 text-left flex items-start gap-3 mb-2">
+                <div className="w-10 h-10 rounded-full bg-destructive/10 flex items-center justify-center flex-shrink-0">
+                  <Star className="w-5 h-5 text-destructive" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-destructive">Focus Letters for Next Time</h4>
+                  <p className="text-sm text-destructive/80">
+                    Practice the letters {highRiskLetters.join(', ')} to boost your skills.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Per-letter cards */}
+            {letterResults.map((res, idx) => (
+              <div 
+                key={idx} 
+                className={`p-5 rounded-2xl border-2 text-left flex items-center gap-5 transition-all hover:shadow-md ${
+                  res.risk_level === 'low' ? 'bg-success/5 border-success/20' :
+                  res.risk_level === 'medium' ? 'bg-warning/5 border-warning/20' :
+                  res.risk_level === 'high' ? 'bg-destructive/5 border-destructive/20' :
+                  'bg-muted/30 border-muted'
+                }`}
+              >
+                <div 
+                  className={`text-5xl font-bold select-none ${
+                    res.risk_level === 'low' ? 'text-success' :
+                    res.risk_level === 'medium' ? 'text-warning' :
+                    res.risk_level === 'high' ? 'text-destructive' :
+                    'text-muted-foreground'
+                  }`}
+                  style={{ fontFamily: '"OpenDyslexic", sans-serif' }}
+                >
+                  {res.letter}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h5 className={`font-bold text-sm uppercase tracking-wider ${
+                    res.risk_level === 'low' ? 'text-success' :
+                    res.risk_level === 'medium' ? 'text-warning' :
+                    res.risk_level === 'high' ? 'text-destructive' :
+                    'text-muted-foreground'
+                  }`}>
+                    {res.risk_level === 'low' ? 'Excellent' : 
+                     res.risk_level === 'medium' ? 'Good' : 
+                     res.risk_level === 'high' ? 'Needs Focus' : 'Pending'}
+                  </h5>
+                  <p className="text-xs text-muted-foreground line-clamp-2 mt-1 italic">
+                    {res.note || (res.risk_level === 'pending' ? 'Analysis processing...' : 'Formation analysis complete.')}
+                  </p>
+                </div>
+              </div>
+            ))}
           </div>
         ) : (
-          <div className="mb-8 p-6 bg-muted/30 rounded-2xl border-2 border-dashed border-muted shadow-inner animate-slide-up">
+          <div className="mb-10 p-6 bg-muted/30 rounded-2xl border-2 border-dashed border-muted shadow-inner animate-slide-up">
             <p className="text-muted-foreground font-medium italic">
-              Your handwriting has been submitted for analysis. <br />
-              Check the guardian dashboard in a few minutes for results.
+              Check the guardian dashboard in a few minutes for full results.
             </p>
           </div>
         )}
-
-        <p className="text-lg text-muted-foreground mb-8 leading-relaxed">
-          You finished all the letter tracing exercises! You&apos;re doing amazing.
-          Keep up the great work!
-        </p>
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
           <Link

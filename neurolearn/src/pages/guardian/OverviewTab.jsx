@@ -13,7 +13,6 @@ export default function OverviewTab({ studentId }) {
     if (summary?.stats) {
       const { consistencyScore, totalReversals, sessionsCompleted } = summary.stats;
       
-      // Calculate trend percentage (comparing last two results)
       const lastTwo = analysisResults.slice(0, 2);
       let consistencyTrend = 'flat';
       let trendLabel = 'Stable';
@@ -38,41 +37,60 @@ export default function OverviewTab({ studentId }) {
       };
     }
 
-    if (!analysisResults.length && !sessions.length) {
-      // Return demo data
+    if (!analysisResults.length) {
       return {
-        consistencyScore: 72,
-        consistencyTrend: 'up',
-        sessionsCompleted: 3,
+        consistencyScore: 0,
+        consistencyTrend: 'flat',
+        trendLabel: 'No data',
+        sessionsCompleted: sessions.length,
         sessionsTarget: 5,
         sessionsTrend: 'flat',
-        reversalCount: 4,
-        reversalTrend: 'down',
-        progressTrend: 'improving',
+        reversalCount: 0,
+        reversalTrend: 'flat',
+        progressTrend: 'pending',
       };
     }
 
     const avgScore = analysisResults.reduce((sum, r) => sum + (r.scores?.letterFormScore || 0), 0)
-      / Math.max(analysisResults.length, 1);
+      / analysisResults.length;
+
+    const lastTwo = analysisResults.slice(0, 2);
+    let consistencyTrend = 'flat';
+    let trendLabel = 'Stable';
+    if (lastTwo.length === 2) {
+      const current = lastTwo[0].scores?.letterFormScore || 0;
+      const previous = lastTwo[1].scores?.letterFormScore || 0;
+      const trendPct = previous > 0 ? Math.round(((current - previous) / previous) * 100) : 0;
+      consistencyTrend = trendPct > 5 ? 'up' : trendPct < -5 ? 'down' : 'flat';
+      trendLabel = trendPct !== 0 ? `${trendPct > 0 ? '+' : ''}${trendPct}%` : 'Stable';
+    }
 
     return {
       consistencyScore: Math.round(avgScore),
-      consistencyTrend: avgScore > 60 ? 'up' : avgScore > 40 ? 'flat' : 'down',
+      consistencyTrend,
+      trendLabel,
       sessionsCompleted: sessions.length,
       sessionsTarget: 5,
       sessionsTrend: sessions.length >= 3 ? 'up' : 'flat',
       reversalCount: analysisResults.reduce((sum, r) => sum + (r.indicators?.reversals?.length || 0), 0),
       reversalTrend: 'down',
-      progressTrend: behaviourSnapshots[0]?.performanceTrend || 'improving',
+      progressTrend: behaviourSnapshots[0]?.performanceTrend || 'stable',
     };
-  }, [analysisResults, sessions, behaviourSnapshots]);
+  }, [analysisResults, sessions, behaviourSnapshots, summary]);
 
   const trendData = useMemo(() => {
     if (summary?.stats?.trendData?.length > 0) {
       return summary.stats.trendData;
     }
-    return [];
-  }, [summary]);
+    // Build from results if API summary missing
+    return analysisResults
+      .slice()
+      .reverse()
+      .map(r => ({
+        date: r.analyzedAt?.toDate ? r.analyzedAt.toDate().toLocaleDateString() : '',
+        value: r.scores?.overallDyslexiaRisk || 0
+      }));
+  }, [summary, analysisResults]);
 
   if (loading) {
     return (

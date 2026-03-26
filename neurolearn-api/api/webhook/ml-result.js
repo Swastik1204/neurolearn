@@ -1,6 +1,7 @@
 import { setCors } from '../../lib/cors.js';
 import { adminDb } from '../../lib/firebaseAdmin.js';
 import { verifyMLSecret } from '../../lib/auth.js';
+import { generateHandwritingInterpretation } from '../../lib/genAI.js';
 
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
@@ -19,7 +20,7 @@ export default async function handler(req, res) {
       return res.status(401).json({ error: 'Invalid ML secret' });
     }
 
-    const { sampleId, scores, indicators, rawFeatures } = req.body;
+    const { sampleId, letter, scores, indicators, letter_specific, rawFeatures } = req.body;
 
     if (!sampleId || !scores) {
       return res.status(400).json({ error: 'Missing required fields: sampleId, scores' });
@@ -32,17 +33,22 @@ export default async function handler(req, res) {
     }
     const studentId = sampleDoc.data().studentId;
 
+    // Fetch student info for Gemini context
+    const studentUserSnap = await adminDb.collection('users').doc(studentId).get();
+    const studentName = studentUserSnap.exists ? (studentUserSnap.data().displayName || 'Student') : 'Student';
+
     // Write analysis result
     const resultRef = await adminDb.collection('analysisResults').add({
       sampleId,
       studentId,
+      letter: letter || '',
       analyzedAt: new Date(),
       scores: {
-        letterFormScore: scores.letter_form_score || 0,
-        spacingScore: scores.spacing_score || 0,
-        baselineScore: scores.baseline_score || 0,
-        reversalScore: scores.reversal_score || 0,
-        overallDyslexiaRisk: scores.overall_dyslexia_risk || 0,
+        letterFormScore: scores.letterFormScore || 0,
+        spacingScore: scores.spacingScore || 0,
+        baselineScore: scores.baselineScore || 0,
+        reversalScore: scores.reversalScore || 0,
+        overallDyslexiaRisk: scores.overallRisk || 0,
       },
       indicators: {
         reversals: indicators?.reversals || [],
@@ -50,15 +56,33 @@ export default async function handler(req, res) {
         substitutions: indicators?.substitutions || [],
         sequencing: indicators?.sequencing_errors || [],
       },
+      letter_specific: letter_specific || {},
       rawFeatures: rawFeatures || {},
     });
+
+    // Generate AI interpretation (non-blocking for the immediate 200 response if possible, but we'll do it here for stability)
+    let aiInterpretation = "";
+    try {
+      aiInterpretation = await generateHandwritingInterpretation({
+        letter: letter || 'unknown',
+        scores: scores,
+        letter_specific: letter_specific,
+        studentName
+      });
+      // Update the result doc with the interpretation
+      await resultRef.update({ geminiInterpretation: aiInterpretation });
+    } catch (aiErr) {
+      console.error('Interpretation failed:', aiErr.message);
+    }
 
     // Update sample status
     await adminDb.collection('handwritingSamples').doc(sampleId).update({
       analysisStatus: 'complete',
       analysisResult: {
         resultId: resultRef.id,
-        overallRisk: scores.overall_dyslexia_risk || 0,
+        overallRisk: scores.overallRisk || 0,
+        letter: letter || '',
+        aiInterpretation: aiInterpretation
       },
     });
 
