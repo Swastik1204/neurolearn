@@ -17,6 +17,9 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = FastAPI(title="NeuroLearn ML Service", version="1.0.0")
 
@@ -98,7 +101,7 @@ def extract_features(img):
     features.append(np.std(heights) / (np.mean(heights) + 1e-6))
     features.append(np.std(widths) / (np.mean(widths) + 1e-6))
     features.append(np.std(areas) / (np.mean(areas) + 1e-6))
-    bottom = [y + s[cv2.CC_STAT_HEIGHT] for _, s in valid]
+    bottom = [s[cv2.CC_STAT_TOP] + s[cv2.CC_STAT_HEIGHT] for _, s in valid]
     features.append(np.std(bottom) / (32 + 1e-6))
     gaps = np.diff(sorted(x_pos)) if len(x_pos) > 1 else [0]
     features.append(np.std(gaps) / (np.mean(gaps) + 1e-6))
