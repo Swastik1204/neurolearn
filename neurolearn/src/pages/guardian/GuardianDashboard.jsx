@@ -1,16 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { signOut } from 'firebase/auth';
 import { auth, db } from '@/services/firebase';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc as firestoreDoc, getDoc } from 'firebase/firestore';
 import useCurrentUser from '@/hooks/useCurrentUser';
 import OverviewTab from './OverviewTab';
 import HandwritingTab from './HandwritingTab';
 import ReportTab from './ReportTab';
 import BehaviourTab from './BehaviourTab';
-import LinkStudentModal from '@/components/LinkStudentModal';
+import StudentListPanel from '@/components/StudentListPanel';
 import {
   BookOpen, LogOut, LayoutDashboard, PenTool, FileText, Activity,
-  ChevronDown, UserPlus, Users,
+  ChevronDown, Users, UserPlus, Check,
 } from 'lucide-react';
 
 const TABS = [
@@ -26,7 +26,20 @@ export default function GuardianDashboard() {
   const [students, setStudents] = useState([]);
   const [selectedStudentId, setSelectedStudentId] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [showLinkModal, setShowLinkModal] = useState(false);
+  const [showStudentDropdown, setShowStudentDropdown] = useState(false);
+  const [showBrowsePanel, setShowBrowsePanel] = useState(false);
+  const dropdownRef = useRef(null);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setShowStudentDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Fetch linked students
   useEffect(() => {
@@ -37,15 +50,30 @@ export default function GuardianDashboard() {
 
     const fetchStudents = async () => {
       try {
-        // Fetch student profiles
         const studentsData = [];
         for (const sid of studentIds) {
-          const q = query(collection(db, 'students'), where('uid', '==', sid));
-          const snap = await getDocs(q);
-          snap.docs.forEach((d) => studentsData.push({ id: d.id, ...d.data() }));
+          // studentIds contains doc IDs from /students collection
+          const studentDocRef = firestoreDoc(db, 'students', sid);
+          const studentSnap = await getDoc(studentDocRef);
+          if (studentSnap.exists()) {
+            const data = { id: studentSnap.id, ...studentSnap.data() };
+
+            // Enrich with email from /users collection
+            if (data.uid) {
+              try {
+                const userSnap = await getDoc(firestoreDoc(db, 'users', data.uid));
+                if (userSnap.exists()) {
+                  const userData = userSnap.data();
+                  data.email = userData.email || '';
+                  data.displayName = data.displayName || userData.displayName || 'Student';
+                }
+              } catch (_) {}
+            }
+
+            studentsData.push(data);
+          }
         }
 
-        // If no student documents found, use the IDs directly
         if (studentsData.length === 0) {
           setStudents(studentIds.map((sid) => ({ id: sid, uid: sid, displayName: 'Student' })));
         } else {
@@ -80,45 +108,102 @@ export default function GuardianDashboard() {
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
-            {/* Student selector / Indicator */}
-            {students.length > 0 && (
-              <div className="flex items-center gap-2">
-                {students.length > 1 ? (
-                  <div className="relative">
-                    <select
-                      value={selectedStudentId || ''}
-                      onChange={(e) => setSelectedStudentId(e.target.value)}
-                      className="appearance-none px-4 py-2 pr-8 rounded-lg border border-input bg-background text-sm font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-                    >
-                      {students.map((s) => (
-                        <option key={s.id} value={s.uid || s.id}>
-                          {s.displayName || 'Student'}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted text-sm font-medium text-foreground">
-                    <Users className="w-4 h-4 text-muted-foreground" />
-                    <span>{students[0]?.displayName || 'Student'}</span>
-                  </div>
+          <div className="flex items-center gap-3">
+            {/* Student Button with Dropdown */}
+            <div className="relative" ref={dropdownRef}>
+              <button
+                onClick={() => setShowStudentDropdown(!showStudentDropdown)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium transition-all ${
+                  showStudentDropdown
+                    ? 'border-primary bg-primary/10 text-primary shadow-sm'
+                    : 'border-input bg-background text-foreground hover:border-primary/40 hover:bg-primary/5'
+                }`}
+              >
+                <Users className="w-4 h-4" />
+                <span>Student</span>
+                {students.length > 0 && (
+                  <span className="ml-0.5 w-5 h-5 rounded-full bg-primary/15 text-primary text-xs font-bold flex items-center justify-center">
+                    {students.length}
+                  </span>
                 )}
-              </div>
-            )}
+                <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${showStudentDropdown ? 'rotate-180' : ''}`} />
+              </button>
+
+              {/* Dropdown Panel */}
+              {showStudentDropdown && (
+                <div className="absolute right-0 top-full mt-2 w-72 bg-card rounded-xl border border-border shadow-xl overflow-hidden animate-scale-in z-50">
+                  {students.length === 0 ? (
+                    <div className="p-4 text-center">
+                      <Users className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+                      <p className="text-sm text-muted-foreground mb-3">No students connected yet.</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="px-3 pt-3 pb-1.5">
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1">
+                          Connected Students
+                        </p>
+                      </div>
+                      <div className="max-h-52 overflow-y-auto">
+                        {students.map((s) => {
+                          const isSelected = (s.uid || s.id) === selectedStudentId;
+                          const initial = (s.displayName || '?')[0].toUpperCase();
+                          return (
+                            <button
+                              key={s.id}
+                              onClick={() => {
+                                setSelectedStudentId(s.uid || s.id);
+                                setShowStudentDropdown(false);
+                              }}
+                              className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-all hover:bg-muted/60 ${
+                                isSelected ? 'bg-primary/8' : ''
+                              }`}
+                            >
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
+                                isSelected ? 'bg-primary/20 text-primary' : 'bg-muted text-muted-foreground'
+                              }`}>
+                                {initial}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className={`text-sm font-medium truncate ${
+                                  isSelected ? 'text-primary' : 'text-foreground'
+                                }`}>
+                                  {s.displayName || 'Student'}
+                                </p>
+                                {s.email && (
+                                  <p className="text-xs text-muted-foreground truncate">{s.email}</p>
+                                )}
+                              </div>
+                              {isSelected && (
+                                <Check className="w-4 h-4 text-primary flex-shrink-0" />
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+
+                  {/* Browse All Students action */}
+                  <div className="border-t border-border p-2">
+                    <button
+                      onClick={() => {
+                        setShowStudentDropdown(false);
+                        setShowBrowsePanel(true);
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium text-primary hover:bg-primary/10 transition-all"
+                    >
+                      <UserPlus className="w-4 h-4" />
+                      Browse All Students
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
 
             <span className="text-sm text-muted-foreground hidden sm:block">
               {user?.displayName || user?.email}
             </span>
-            <button
-              onClick={() => setShowLinkModal(true)}
-              className="hidden md:flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-all font-medium text-sm"
-              title="Link a new student"
-            >
-              <UserPlus className="w-4 h-4" />
-              <span>Link Student</span>
-            </button>
 
             <button
               onClick={() => signOut(auth)}
@@ -159,6 +244,42 @@ export default function GuardianDashboard() {
         </div>
       </div>
 
+      {/* Student Selector Strip — visible when multiple students are linked */}
+      {students.length > 1 && selectedStudentId && (
+        <div className="bg-muted/30 border-b border-border">
+          <div className="max-w-6xl mx-auto px-6 py-3">
+            <div className="flex items-center gap-3 overflow-x-auto">
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
+                Viewing:
+              </span>
+              {students.map((s) => {
+                const uid = s.uid || s.id;
+                const isSelected = uid === selectedStudentId;
+                const initial = (s.displayName || s.email || '?')[0].toUpperCase();
+                return (
+                  <button
+                    key={s.id}
+                    onClick={() => setSelectedStudentId(uid)}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
+                      isSelected
+                        ? 'bg-primary text-white shadow-sm'
+                        : 'bg-card border border-border text-foreground hover:border-primary/40 hover:bg-primary/5'
+                    }`}
+                  >
+                    <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
+                      isSelected ? 'bg-white/20 text-white' : 'bg-primary/10 text-primary'
+                    }`}>
+                      {initial}
+                    </span>
+                    {s.displayName || 'Student'}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Content */}
       <main className="max-w-6xl mx-auto px-6 py-8">
         {loading ? (
@@ -171,34 +292,36 @@ export default function GuardianDashboard() {
               <BookOpen className="w-8 h-8 text-muted-foreground" />
             </div>
             <h2 className="text-xl font-semibold text-foreground mb-2">No students linked</h2>
-            <p className="text-muted-foreground mb-6">Link a student to your account to view their progress.</p>
+            <p className="text-muted-foreground mb-6">Browse available students and connect to view their progress.</p>
             <button
-              onClick={() => setShowLinkModal(true)}
+              onClick={() => setShowBrowsePanel(true)}
               className="inline-flex items-center gap-2 px-6 py-3 rounded-xl gradient-primary text-white font-medium hover:shadow-lg transition-all shadow-md group"
             >
               <UserPlus className="w-5 h-5 group-hover:scale-110 transition-transform" />
-              Link a Student
+              Browse Students
             </button>
           </div>
         ) : (
           <>
-            {activeTab === 'overview' && <OverviewTab studentId={selectedStudentId} />}
-            {activeTab === 'handwriting' && <HandwritingTab studentId={selectedStudentId} />}
+            {activeTab === 'overview' && <OverviewTab key={selectedStudentId} studentId={selectedStudentId} />}
+            {activeTab === 'handwriting' && <HandwritingTab key={selectedStudentId} studentId={selectedStudentId} />}
             {activeTab === 'reports' && (
               <ReportTab
+                key={selectedStudentId}
                 studentId={selectedStudentId}
                 studentName={selectedStudent?.displayName || 'Student'}
               />
             )}
-            {activeTab === 'behaviour' && <BehaviourTab studentId={selectedStudentId} />}
+            {activeTab === 'behaviour' && <BehaviourTab key={selectedStudentId} studentId={selectedStudentId} />}
           </>
         )}
       </main>
 
-      {showLinkModal && (
-        <LinkStudentModal
+      {showBrowsePanel && (
+        <StudentListPanel
           role="guardian"
-          onClose={() => setShowLinkModal(false)}
+          linkedStudentIds={studentIds || []}
+          onClose={() => setShowBrowsePanel(false)}
           onSuccess={() => window.location.reload()}
         />
       )}

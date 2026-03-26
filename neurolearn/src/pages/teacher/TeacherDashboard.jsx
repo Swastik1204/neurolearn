@@ -9,7 +9,7 @@ import {
   BookOpen, LogOut, ChevronDown, ChevronUp, ClipboardList,
   AlertCircle, CheckCircle, Clock, Users, UserPlus
 } from 'lucide-react';
-import LinkStudentModal from '@/components/LinkStudentModal';
+import StudentListPanel from '@/components/StudentListPanel';
 
 function getRiskLevel(score) {
   if (score > 0.6) return { level: 'High', color: 'bg-risk-high', textColor: 'text-risk-high' };
@@ -18,12 +18,12 @@ function getRiskLevel(score) {
 }
 
 export default function TeacherDashboard() {
-  const { user } = useCurrentUser();
+  const { user, studentIds } = useCurrentUser();
   const [students, setStudents] = useState([]);
   const [expandedStudent, setExpandedStudent] = useState(null);
   const [assignStudent, setAssignStudent] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [showLinkModal, setShowLinkModal] = useState(false);
+  const [showBrowsePanel, setShowBrowsePanel] = useState(false);
 
   useEffect(() => {
     if (!user?.uid) return;
@@ -45,11 +45,13 @@ export default function TeacherDashboard() {
           try {
             const analysisQ = query(
               collection(db, 'analysisResults'),
-              where('studentId', '==', student.uid),
-              orderBy('analyzedAt', 'desc')
+              where('studentId', '==', student.uid)
             );
             const analysisSnap = await getDocs(analysisQ);
-            const latestAnalysis = analysisSnap.docs[0]?.data();
+            const sortedAnalysis = analysisSnap.docs
+              .map(d => d.data())
+              .sort((a, b) => (b.analyzedAt?.toMillis?.() || 0) - (a.analyzedAt?.toMillis?.() || 0));
+            const latestAnalysis = sortedAnalysis[0];
             student.riskScore = latestAnalysis?.scores?.overallDyslexiaRisk || 0;
             student.lastAnalysis = latestAnalysis;
           } catch (e) {
@@ -141,7 +143,7 @@ export default function TeacherDashboard() {
                   <h2 className="text-xl font-bold text-foreground">Class Roster</h2>
                   {students.length > 0 && (
                     <button
-                      onClick={() => setShowLinkModal(true)}
+                      onClick={() => setShowBrowsePanel(true)}
                       className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-primary/20 bg-primary/5 text-primary hover:bg-primary/10 transition-all font-medium text-xs"
                     >
                       <UserPlus className="w-3.5 h-3.5" />
@@ -155,7 +157,7 @@ export default function TeacherDashboard() {
                     <Users className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
                     <p className="text-muted-foreground mb-4">No students assigned to your class yet.</p>
                     <button
-                      onClick={() => setShowLinkModal(true)}
+                      onClick={() => setShowBrowsePanel(true)}
                       className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white hover:bg-primary-dark transition-all font-medium text-sm shadow-sm"
                     >
                       <UserPlus className="w-4 h-4" />
@@ -264,10 +266,11 @@ export default function TeacherDashboard() {
         />
       )}
 
-      {showLinkModal && (
-        <LinkStudentModal
+      {showBrowsePanel && (
+        <StudentListPanel
           role="teacher"
-          onClose={() => setShowLinkModal(false)}
+          linkedStudentIds={studentIds || []}
+          onClose={() => setShowBrowsePanel(false)}
           onSuccess={() => window.location.reload()}
         />
       )}
