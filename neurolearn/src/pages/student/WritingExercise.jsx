@@ -7,7 +7,7 @@ import WritingCanvas from '@/components/canvas/WritingCanvas';
 import TextToSpeech from '@/components/TextToSpeech';
 import FocusMode from '@/components/FocusMode';
 import { analyzeHandwriting } from '@/services/api';
-import { preloadDyslexiaModel, analyzeHandwritingLocally } from '../../services/mlService';
+import mlService from '../../services/mlService';
 import { BookOpen, ArrowLeft, ChevronRight } from 'lucide-react';
 
 const DEFAULT_LETTERS = ['b', 'd', 'p', 'q', 'g', 'y', 'f', 'h', 'n', 'm'];
@@ -33,9 +33,9 @@ export default function WritingExercise() {
   const [localRiskLevel, setLocalRiskLevel] = useState(null);
   const [submitFeedback, setSubmitFeedback] = useState("");
 
-  // Preload TFLite model in background when exercise page loads
+  // Initialization if any (mlService handled)
   useEffect(() => {
-    preloadDyslexiaModel();
+    mlService.initialize();
   }, []);
 
   const currentWord = prompts[currentIndex];
@@ -50,15 +50,11 @@ export default function WritingExercise() {
     setWordTimings((prev) => [...prev, { word: currentWord, durationMs: duration }]);
 
     try {
-      // Run instant on-device TFLite analysis
-      const img = new Image();
-      img.src = URL.createObjectURL(imageBlob);
-      await new Promise(r => img.onload = r);
-      const localResult = await analyzeHandwritingLocally(img);
+      // Local analysis is now server-only (asynchronous)
+      const localResult = await mlService.analyzeHandwriting(null); // canvas not needed for mock
       if (localResult) {
         setLocalRiskScore(localResult.riskScore);
         setLocalRiskLevel(localResult.riskLevel);
-        console.log('[NeuroLearn ML] Local score:', localResult.riskScore, '| Level:', localResult.riskLevel);
       }
       
       const encouragements = [
@@ -132,8 +128,8 @@ export default function WritingExercise() {
       }
       navigate('/student/complete', { 
         state: { 
-          score: localRiskScore, 
-          level: localRiskLevel 
+          score: localRiskScore ?? null, 
+          level: localRiskLevel ?? 'Pending server analysis'
         } 
       });
     } else {

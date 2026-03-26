@@ -1,7 +1,6 @@
 export function setCors(req, res) {
   const allowed = [
     'https://neurolearn-tutor-app.web.app',
-    'https://neurolearn.vercel.app',
     'http://localhost:5173'
   ];
   
@@ -13,6 +12,6 @@ export function setCors(req, res) {
     res.setHeader('Access-Control-Allow-Origin', '*');
   }
 
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-ML-Secret');
 }

@@ -11,13 +11,10 @@ export default defineConfig({
   resolve: {
     alias: [
       { find: '@', replacement: path.resolve(__dirname, './src') },
-      { find: '@tensorflow/tfjs-tflite', replacement: path.resolve(__dirname, 'node_modules/@tensorflow/tfjs-tflite/dist/tf-tflite.fesm.js') },
-      { find: /.*tflite_web_api_client.*/, replacement: path.resolve(__dirname, './src/mock_tflite_web_api_client.js') }
     ],
   },
   optimizeDeps: {
     include: ['long', 'seedrandom'],
-    exclude: ['@tensorflow/tfjs-tflite']
   },
   build: {
     rollupOptions: {

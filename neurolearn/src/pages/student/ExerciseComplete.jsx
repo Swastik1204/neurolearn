@@ -15,7 +15,7 @@ export default function ExerciseComplete() {
           Great job! 🎉
         </h1>
 
-        {score !== null && (
+        {score !== null ? (
           <div className="mb-8 p-6 bg-card rounded-2xl border-2 border-primary/20 shadow-sm animate-slide-up">
             <div className="flex items-center justify-center gap-2 mb-2">
               <Star className="w-5 h-5 text-primary fill-primary" />
@@ -30,6 +30,13 @@ export default function ExerciseComplete() {
             }`}>
               {level === 'low' ? 'Excellent Form' : level === 'medium' ? 'Good Effort' : 'Keep Practicing'}
             </div>
+          </div>
+        ) : (
+          <div className="mb-8 p-6 bg-muted/30 rounded-2xl border-2 border-dashed border-muted shadow-inner animate-slide-up">
+            <p className="text-muted-foreground font-medium italic">
+              Your handwriting has been submitted for analysis. <br />
+              Check the guardian dashboard in a few minutes for results.
+            </p>
           </div>
         )}
 
