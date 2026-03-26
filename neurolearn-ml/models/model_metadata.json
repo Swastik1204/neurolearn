@@ -1,7 +1,7 @@
 {
   "model_version": "1.0.0",
   "trained_on": "IAM Handwriting Word Database (Kaggle nibinv23)",
-  "training_date": "2026-03-23 15:06:56",
+  "training_date": "2026-03-26 23:06:58",
   "samples_total": 9154,
   "samples_normal": 5792,
   "samples_indicator": 3362,
@@ -9,9 +9,9 @@
   "rf_auc": 0.9371,
   "rf_cv_auc_mean": 0.9389,
   "rf_cv_auc_std": 0.0034,
-  "cnn_accuracy": 0.8542,
-  "cnn_auc": 0.9396,
-  "cnn_epochs": 29,
+  "cnn_accuracy": 0.8525,
+  "cnn_auc": 0.9434,
+  "cnn_epochs": 47,
   "feature_count": 20,
   "feature_names": [
     "height_variance",

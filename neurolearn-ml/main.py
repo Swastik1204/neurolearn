@@ -185,12 +185,10 @@ async def analyze(req: AnalyzeRequest):
             risk_proba = float(proba[1])  # probability of dyslexia indicator
 
             # Incorporate stroke timing metadata
-            pause_ratio = float(req.stroke_metadata.get('pauseRatio', 0))
-            speed_variance = float(req.stroke_metadata.get('speedVariance', 0))
-            t_risk = pause_ratio * 0.4 + speed_variance * 0.1
-            timing_risk = float(t_risk if t_risk < 0.3 else 0.3)
-            c_risk = risk_proba * 0.7 + timing_risk
-            combined_risk = float(c_risk if c_risk < 1.0 else 1.0)
+            pause_ratio = req.stroke_metadata.get('pauseRatio', 0)
+            speed_variance = req.stroke_metadata.get('speedVariance', 0)
+            timing_risk = min(pause_ratio * 0.4 + speed_variance * 0.1, 0.3)
+            combined_risk = min(risk_proba * 0.7 + timing_risk, 1.0)
         else:
             # Fallback when model not loaded
             combined_risk = 0.3
@@ -198,35 +196,19 @@ async def analyze(req: AnalyzeRequest):
 
         # Compute individual dimension scores (0–100)
         f = raw_features
-        lf_score = 100.0 - (f[0] * 80.0 + f[1] * 20.0)
-        letter_form_score = float(lf_score if lf_score > 0.0 else 0.0)
-        
-        sp_score = 100.0 - (f[4] * 100.0)
-        spacing_score = float(sp_score if sp_score > 0.0 else 0.0)
-        
-        bs_score = 100.0 - (f[3] * 150.0)
-        baseline_score = float(bs_score if bs_score > 0.0 else 0.0)
-        
-        rev_val = f[14] * 40.0 + abs(f[19] - 1.0) * 60.0
-        reversal_score = float(rev_val if rev_val < 100.0 else 100.0)
+        letter_form_score = max(0, 100 - (f[0] * 80 + f[1] * 20))
+        spacing_score = max(0, 100 - (f[4] * 100))
+        baseline_score = max(0, 100 - (f[3] * 150))
+        reversal_score = min(100, (f[14] * 40 + abs(f[19] - 1.0) * 60))
 
-        # Build indicators (aligned with webhook expectations)
-        rev_list = []
-        if f[14] > 0.7:
-            rev_list.append({"confidence": float(f[14]), "type": "horizontal_symmetry"})
-            
-        om_list = []
-        if f[6] < 0.5:
-            om_list.append({"type": "missing_strokes"})
-
+        # Build indicators
         indicators = {
-            "reversals": rev_list,
-            "omissions": om_list,
-            "substitutions": [],
-            "sequencing_errors": [],
-            "baselineDrift": bool(f[3] > 0.3),
-            "sizingInconsistency": bool(f[0] > 0.4),
-            "spacingIrregularity": bool(f[4] > 0.5),
+            "reversals": [{"confidence": float(f[14]), "type": "horizontal_symmetry"}]
+                         if f[14] > 0.7 else [],
+            "baselineDrift": float(f[3]) > 0.3,
+            "sizingInconsistency": float(f[0]) > 0.4,
+            "spacingIrregularity": float(f[4]) > 0.5,
+            "omissionRisk": float(f[6]) < 0.5,
         }
 
         risk_level = (
@@ -280,11 +262,11 @@ async def analyze(req: AnalyzeRequest):
                 "sampleId": req.sample_id,
                 "letter": target_letter,
                 "scores": {
-                    "letterFormScore": float(f"{letter_form_score:.1f}"),
-                    "spacingScore": float(f"{spacing_score:.1f}"),
-                    "baselineScore": float(f"{baseline_score:.1f}"),
-                    "reversalScore": float(f"{reversal_score:.1f}"),
-                    "overallRisk": float(f"{combined_risk:.3f}"),
+                    "letterFormScore": round(letter_form_score, 1),
+                    "spacingScore": round(spacing_score, 1),
+                    "baselineScore": round(baseline_score, 1),
+                    "reversalScore": round(reversal_score, 1),
+                    "overallRisk": round(combined_risk, 3),
                 },
                 "indicators": indicators,
                 "letter_specific": letter_specific,
@@ -303,15 +285,15 @@ async def analyze(req: AnalyzeRequest):
 
         return AnalyzeResponse(
             sample_id=req.sample_id,
-            overall_risk=float(f"{combined_risk:.3f}"),
+            overall_risk=round(combined_risk, 3),
             risk_level=risk_level,
             letter=target_letter,
             scores={
-                "letterFormScore": float(f"{letter_form_score:.1f}"),
-                "spacingScore": float(f"{spacing_score:.1f}"),
-                "baselineScore": float(f"{baseline_score:.1f}"),
-                "reversalScore": float(f"{reversal_score:.1f}"),
-                "overallRisk": float(f"{combined_risk:.3f}"),
+                "letterFormScore": round(letter_form_score, 1),
+                "spacingScore": round(spacing_score, 1),
+                "baselineScore": round(baseline_score, 1),
+                "reversalScore": round(reversal_score, 1),
+                "overallRisk": round(combined_risk, 3),
             },
             indicators=indicators,
             letter_specific=letter_specific,

@@ -3,12 +3,9 @@ import { adminDb } from '../../lib/firebaseAdmin.js';
 import { verifyToken, getUserRole } from '../../lib/auth.js';
 
 export default async function handler(req, res) {
-  if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', 'https://neurolearn-tutor-app.web.app');
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-ML-Secret');
-    return res.status(200).end();
-  }
+  setCors(req, res);
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -70,7 +67,7 @@ export default async function handler(req, res) {
       const date = result.analyzedAt?.toDate ? result.analyzedAt.toDate() : new Date();
       const dateKey = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
       if (!acc[dateKey]) acc[dateKey] = { sum: 0, count: 0, timestamp: date.getTime() };
-      acc[dateKey].sum += (result.scores?.overallRisk || 0);
+      acc[dateKey].sum += (result.scores?.overallDyslexiaRisk || 0);
       acc[dateKey].count += 1;
       return acc;
     }, {});
