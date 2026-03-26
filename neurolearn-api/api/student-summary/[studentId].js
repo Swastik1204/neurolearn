@@ -54,11 +54,42 @@ export default async function handler(req, res) {
       .get();
     const sessions = sessionSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
+    // Aggregate stats for dashboard
+    const avgFormScore = analysisResults.length > 0
+      ? analysisResults.reduce((sum, r) => sum + (r.scores?.letterFormScore || 0), 0) / analysisResults.length
+      : 0;
+
+    const totalReversals = analysisResults.reduce((sum, r) => sum + (r.indicators?.reversals?.length || 0), 0);
+
+    // Group analysis results by date for trend chart
+    const trendGroups = analysisResults.reduce((acc, result) => {
+      const date = result.analyzedAt?.toDate ? result.analyzedAt.toDate() : new Date();
+      const dateKey = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      if (!acc[dateKey]) acc[dateKey] = { sum: 0, count: 0, timestamp: date.getTime() };
+      acc[dateKey].sum += (result.scores?.overallRisk || 0);
+      acc[dateKey].count += 1;
+      return acc;
+    }, {});
+
+    const trendData = Object.entries(trendGroups)
+      .map(([date, data]) => ({
+        week: date,
+        value: Math.round((data.sum / data.count) * 100),
+        timestamp: data.timestamp
+      }))
+      .sort((a, b) => a.timestamp - b.timestamp);
+
     return res.status(200).json({
       studentId,
       behaviourSnapshots,
       analysisResults,
       sessions,
+      stats: {
+        consistencyScore: Math.round(avgFormScore),
+        totalReversals,
+        sessionsCompleted: sessions.length,
+        trendData,
+      }
     });
   } catch (error) {
     console.error('student-summary error:', error.message);

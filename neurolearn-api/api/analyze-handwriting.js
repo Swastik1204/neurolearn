@@ -28,33 +28,9 @@ export default async function handler(req, res) {
       imageBase64
     });
 
-    // Enqueue analysis task
-    const mlServiceUrl = process.env.ML_SERVICE_URL;
-    if (mlServiceUrl) {
-      try {
-        const response = await fetch(`${mlServiceUrl}/analyze`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            image_base64: imageBase64,
-            sample_id: sampleId,
-            stroke_metadata: strokeMetadata || {},
-          }),
-        });
-
-        if (!response.ok) {
-          console.error('ML service returned error:', response.status);
-        }
-      } catch (mlError) {
-        // ML service may be sleeping on free tier — mark as pending retry
-        console.error('ML service unavailable:', mlError.message);
-        await adminDb.collection('handwritingSamples').doc(sampleId).update({
-          analysisStatus: 'pending',
-        });
-      }
-    }
+    // Enqueue analysis task 
+    // NOTE: ML_SERVICE_URL was removed as per cleanup request. 
+    // Analysis is now primarily handled via stored Base64 for async processing.
 
     // Audit log (no PII)
     await auditLog('analyze_handwriting', {

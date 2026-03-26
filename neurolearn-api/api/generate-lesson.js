@@ -18,9 +18,18 @@ export default async function handler(req, res) {
 
     const { topic, difficulty, childName } = req.body;
     
-    const lesson = await generateLesson(topic || 'reading', difficulty || 'easy', childName || 'Student');
+    const fullText = await generateLesson(topic || 'reading', difficulty || 'easy', childName || 'Student');
+    
+    // Parse words from [WORDS: ...] format
+    const wordsMatch = fullText.match(/\[WORDS:\s*([^\]]+)\]/i);
+    const words = wordsMatch 
+      ? wordsMatch[1].split(',').map(w => w.trim()).filter(w => w.length > 0)
+      : [];
+    
+    // Remove the words marker from the lesson text
+    const lesson = fullText.replace(/\[WORDS:\s*[^\]]+\]/i, '').trim();
 
-    return res.status(200).json({ lesson });
+    return res.status(200).json({ lesson, words });
   } catch (error) {
     console.error('generate-lesson error:', error.message);
     return res.status(500).json({ error: 'Internal server error', details: error.message });

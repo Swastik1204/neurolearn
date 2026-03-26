@@ -21,7 +21,7 @@ export default function SampleGrid({ samples = [], onSampleClick }) {
           className="group relative aspect-[3/1] rounded-xl border-2 border-border overflow-hidden bg-[#FAFAF7] hover:border-primary/50 transition-all shadow-sm hover:shadow-md"
         >
           <img
-            src={sample.imageUrl}
+            src={sample.imageBase64 || sample.imageUrl}
             alt={`Handwriting sample: ${sample.promptWord || 'writing'}`}
             className="w-full h-full object-contain p-2"
             loading="lazy"

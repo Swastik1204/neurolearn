@@ -9,6 +9,7 @@ import api from '@/services/api';
 export default function StudentHome() {
   const { user } = useCurrentUser();
   const [lessonText, setLessonText] = useState("");
+  const [dynamicWords, setDynamicWords] = useState([]);
   const [loading, setLoading] = useState(false);
 
   const handleLogout = async () => {
@@ -23,6 +24,9 @@ export default function StudentHome() {
         { topic: 'phonics', difficulty: 'easy', childName: user?.displayName || 'Student' }
       );
       setLessonText(response.data.lesson || "Lesson loaded successfully!");
+      if (response.data.words && response.data.words.length > 0) {
+        setDynamicWords(response.data.words);
+      }
     } catch (e) {
       setLessonText("API Error: " + (e.response?.data?.error || e.message));
     } finally {
@@ -71,6 +75,7 @@ export default function StudentHome() {
           {/* Writing Exercise Card */}
           <Link
             to="/student/exercise"
+            state={{ words: dynamicWords }}
             className="group block p-8 bg-card rounded-2xl border-2 border-border hover:border-primary/50 shadow-md hover:shadow-xl transition-all"
           >
             <div className="w-16 h-16 rounded-2xl gradient-primary flex items-center justify-center mb-5 group-hover:scale-110 transition-transform">

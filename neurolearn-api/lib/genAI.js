@@ -21,8 +21,9 @@ Rules:
 - Use lots of encouragement and positive language
 - Include one fun activity suggestion at the end
 - Never use the words "disability", "disorder", or "struggle"
-- Format: 3-4 sentences of explanation, then one activity
-Keep the total response under 120 words.`;
+- Format: 3-4 sentences of explanation, then one activity.
+- At the very end, include a list of 5-8 related practice words in this format: [WORDS: word1, word2, word3]
+Keep the total response under 150 words.`;
 
   const result = await model.generateContent(prompt);
   return result.response.text();

@@ -8,6 +8,7 @@ import os
 import io
 import json
 import httpx
+import base64
 import joblib
 import numpy as np
 import cv2
@@ -47,7 +48,7 @@ async def load_models():
 
 # ── Request/Response models ───────────────────────────────────────────────────
 class AnalyzeRequest(BaseModel):
-    image_url: str
+    image_base64: str
     sample_id: str
     stroke_metadata: dict = {}
 
@@ -147,12 +148,17 @@ async def health():
 @app.post("/analyze", response_model=AnalyzeResponse)
 async def analyze(req: AnalyzeRequest):
     try:
-        # Download image from Firebase Storage
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(req.image_url, timeout=30)
-            if resp.status_code != 200:
-                raise HTTPException(status_code=400, detail="Could not download image")
-            img_bytes = resp.content
+        # Decode base64 image
+        try:
+            # Handle data:image/png;base64, prefix if present
+            encoded = req.image_base64.split(",", 1)[1] if "," in req.image_base64 else req.image_base64
+            img_bytes = base64.b64decode(encoded)
+        except Exception:
+            # Fallback for simple base64
+            try:
+                img_bytes = base64.b64decode(req.image_base64)
+            except Exception:
+                raise HTTPException(status_code=400, detail="Invalid base64 image data")
 
         # Preprocess
         img = preprocess_image_from_bytes(img_bytes)

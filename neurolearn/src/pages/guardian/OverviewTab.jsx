@@ -4,18 +4,40 @@ import WeeklyScoreCard from '@/components/dashboard/WeeklyScoreCard';
 import TrendLine from '@/components/charts/TrendLine';
 import { PenTool, Target, RotateCcw, TrendingUp } from 'lucide-react';
 
-// Demo data for when no real data exists
-const DEMO_TREND = [
-  { week: 'Week 1', value: 35 },
-  { week: 'Week 2', value: 42 },
-  { week: 'Week 3', value: 38 },
-  { week: 'Week 4', value: 52 },
-];
+/* Demo data removed — using real analysis trends */
 
 export default function OverviewTab({ studentId }) {
-  const { sessions, analysisResults, behaviourSnapshots, loading } = useStudentData(studentId);
+  const { sessions, analysisResults, behaviourSnapshots, summary, loading } = useStudentData(studentId);
 
   const metrics = useMemo(() => {
+    if (summary?.stats) {
+      const { consistencyScore, totalReversals, sessionsCompleted } = summary.stats;
+      
+      // Calculate trend percentage (comparing last two results)
+      const lastTwo = analysisResults.slice(0, 2);
+      let consistencyTrend = 'flat';
+      let trendLabel = 'Stable';
+      if (lastTwo.length === 2) {
+        const current = lastTwo[0].scores?.letterFormScore || 0;
+        const previous = lastTwo[1].scores?.letterFormScore || 0;
+        const trendPct = previous > 0 ? Math.round(((current - previous) / previous) * 100) : 0;
+        consistencyTrend = trendPct > 5 ? 'up' : trendPct < -5 ? 'down' : 'flat';
+        trendLabel = trendPct !== 0 ? `${trendPct > 0 ? '+' : ''}${trendPct}%` : 'Stable';
+      }
+
+      return {
+        consistencyScore,
+        consistencyTrend,
+        trendLabel,
+        sessionsCompleted,
+        sessionsTarget: 5,
+        sessionsTrend: sessionsCompleted >= 3 ? 'up' : 'flat',
+        reversalCount: totalReversals,
+        reversalTrend: 'down',
+        progressTrend: behaviourSnapshots[0]?.performanceTrend || 'improving',
+      };
+    }
+
     if (!analysisResults.length && !sessions.length) {
       // Return demo data
       return {
@@ -46,10 +68,11 @@ export default function OverviewTab({ studentId }) {
   }, [analysisResults, sessions, behaviourSnapshots]);
 
   const trendData = useMemo(() => {
-    if (!analysisResults.length) return DEMO_TREND;
-    // Group by weeks and return averages
-    return DEMO_TREND; // Simplified — real implementation would group by week
-  }, [analysisResults]);
+    if (summary?.stats?.trendData?.length > 0) {
+      return summary.stats.trendData;
+    }
+    return [];
+  }, [summary]);
 
   if (loading) {
     return (
@@ -68,7 +91,7 @@ export default function OverviewTab({ studentId }) {
           value={metrics.consistencyScore}
           unit="/100"
           trend={metrics.consistencyTrend}
-          trendLabel={metrics.consistencyTrend === 'up' ? '+8%' : metrics.consistencyTrend === 'down' ? '-5%' : '0%'}
+          trendLabel={metrics.trendLabel}
           icon={PenTool}
         />
         <WeeklyScoreCard

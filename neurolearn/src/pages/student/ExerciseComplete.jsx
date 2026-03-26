@@ -1,7 +1,9 @@
-import { Link } from 'react-router-dom';
-import { PartyPopper, Home, RotateCcw } from 'lucide-react';
+import { Link, useLocation } from 'react-router-dom';
+import { PartyPopper, Home, RotateCcw, Star } from 'lucide-react';
 
 export default function ExerciseComplete() {
+  const location = useLocation();
+  const { score, level } = location.state || { score: null, level: null };
   return (
     <div className="min-h-screen bg-background student-view flex items-center justify-center px-6">
       <div className="text-center animate-fade-in max-w-md">
@@ -9,12 +11,30 @@ export default function ExerciseComplete() {
           <PartyPopper className="w-12 h-12 text-white" />
         </div>
 
-        <h1 className="text-4xl font-bold text-foreground mb-4">
+        <h1 className="text-4xl font-bold text-foreground mb-2">
           Great job! 🎉
         </h1>
 
-        <p className="text-xl text-muted-foreground mb-8 leading-relaxed">
-          You finished all the writing exercises! You&apos;re doing amazing.
+        {score !== null && (
+          <div className="mb-8 p-6 bg-card rounded-2xl border-2 border-primary/20 shadow-sm animate-slide-up">
+            <div className="flex items-center justify-center gap-2 mb-2">
+              <Star className="w-5 h-5 text-primary fill-primary" />
+              <span className="font-bold text-foreground uppercase tracking-wider text-sm">Session Score</span>
+            </div>
+            <div className="text-5xl font-black text-primary mb-1">
+              {Math.round((1 - score) * 100)}%
+            </div>
+            <div className={`text-sm font-semibold px-3 py-1 rounded-full inline-block ${
+              level === 'low' ? 'bg-success/10 text-success' : 
+              level === 'medium' ? 'bg-warning/10 text-warning' : 'bg-destructive/10 text-destructive'
+            }`}>
+              {level === 'low' ? 'Excellent Form' : level === 'medium' ? 'Good Effort' : 'Keep Practicing'}
+            </div>
+          </div>
+        )}
+
+        <p className="text-lg text-muted-foreground mb-8 leading-relaxed">
+          You finished all the letter tracing exercises! You&apos;re doing amazing.
           Keep up the great work!
         </p>
 

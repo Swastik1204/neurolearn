@@ -7,7 +7,7 @@ export default function AnnotatedSampleModal({ sample, analysisResult, onClose }
   const [imageLoaded, setImageLoaded] = useState(false);
 
   useEffect(() => {
-    if (!sample?.imageUrl || !canvasRef.current) return;
+    if (!(sample?.imageBase64 || sample?.imageUrl) || !canvasRef.current) return;
 
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
@@ -56,7 +56,7 @@ export default function AnnotatedSampleModal({ sample, analysisResult, onClose }
       setImageLoaded(true);
     };
 
-    img.src = sample.imageUrl;
+    img.src = sample.imageBase64 || sample.imageUrl;
   }, [sample, analysisResult]);
 
   if (!sample) return null;

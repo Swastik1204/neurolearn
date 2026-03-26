@@ -2,8 +2,7 @@ import { useRef, useEffect, useState, useCallback } from 'react';
 import { drawBaselineGrid, canvasToBlob, calculateStrokeMetadata, smoothPoint } from '@/utils/canvasUtils';
 import CanvasToolbar from './CanvasToolbar';
 
-const CANVAS_WIDTH = 720;
-const CANVAS_HEIGHT = 240;
+const DEFAULT_CANVAS_SIZE = 480;
 
 export default function WritingCanvas({ prompt, onSubmit, disabled = false }) {
   const canvasRef = useRef(null);
@@ -55,10 +54,13 @@ export default function WritingCanvas({ prompt, onSubmit, disabled = false }) {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    canvas.width = CANVAS_WIDTH;
-    canvas.height = CANVAS_HEIGHT;
+    
+    // Set internal resolution once on mount
+    const size = Math.min(window.innerWidth * 0.85, DEFAULT_CANVAS_SIZE);
+    canvas.width = size;
+    canvas.height = size;
     redraw();
-  }, []);
+  }, [redraw]);
 
   const getPointerPos = (e) => {
     const canvas = canvasRef.current;
@@ -141,8 +143,11 @@ export default function WritingCanvas({ prompt, onSubmit, disabled = false }) {
       >
         <canvas
           ref={canvasRef}
-          className="w-full"
-          style={{ aspectRatio: `${CANVAS_WIDTH}/${CANVAS_HEIGHT}` }}
+          className="w-full mx-auto block"
+          style={{ 
+            aspectRatio: '1/1',
+            maxWidth: `${DEFAULT_CANVAS_SIZE}px`
+          }}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}

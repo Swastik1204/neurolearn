@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/services/firebase';
 import useCurrentUser from '@/hooks/useCurrentUser';
@@ -10,11 +10,20 @@ import { analyzeHandwriting } from '@/services/api';
 import { preloadDyslexiaModel, analyzeHandwritingLocally } from '../../services/mlService';
 import { BookOpen, ArrowLeft, ChevronRight } from 'lucide-react';
 
-const PROMPTS = ['bed', 'dog', 'was', 'saw', 'pat', 'tap', 'no', 'on', 'bid', 'dib'];
+const DEFAULT_LETTERS = ['b', 'd', 'p', 'q', 'g', 'y', 'f', 'h', 'n', 'm'];
 
 export default function WritingExercise() {
   const { user } = useCurrentUser();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  const [prompts] = useState(() => {
+    if (location.state?.words && location.state.words.length > 0) {
+      return location.state.words.map(w => w[0].toUpperCase());
+    }
+    return DEFAULT_LETTERS.map(l => l.toUpperCase());
+  });
+
   const [currentIndex, setCurrentIndex] = useState(0);
   const [sessionId] = useState(() => `session_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`);
   const [wordTimings, setWordTimings] = useState([]);
@@ -29,9 +38,9 @@ export default function WritingExercise() {
     preloadDyslexiaModel();
   }, []);
 
-  const currentWord = PROMPTS[currentIndex];
-  const isLastWord = currentIndex === PROMPTS.length - 1;
-  const progress = ((currentIndex) / PROMPTS.length) * 100;
+  const currentWord = prompts[currentIndex];
+  const isLastWord = currentIndex === prompts.length - 1;
+  const progress = ((currentIndex) / prompts.length) * 100;
 
   const handleSubmit = async ({ imageBlob, strokeData, strokeMetadata }) => {
     // Calculate time for this word
@@ -73,8 +82,12 @@ export default function WritingExercise() {
         sessionId,
         capturedAt: serverTimestamp(),
         imageBase64,
-        promptWord: currentWord,
-        strokeMetadata,
+        promptLetter: currentWord,
+        strokeMetadata: {
+          ...strokeMetadata,
+          currentLetter: currentWord,
+          exerciseType: 'single_letter'
+        },
         analysisStatus: 'pending',
         analysisResult: {},
       });
@@ -111,12 +124,18 @@ export default function WritingExercise() {
           pauseEvents: [],
           deviceType: navigator.maxTouchPoints > 0 ? 'touch' : 'mouse',
           timeOfDay: new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 17 ? 'afternoon' : 'evening',
-          wordCount: PROMPTS.length,
+          letterCount: prompts.length,
+          exerciseMode: 'single_letter'
         });
       } catch (err) {
         console.error('Session save failed:', err.message);
       }
-      navigate('/student/complete');
+      navigate('/student/complete', { 
+        state: { 
+          score: localRiskScore, 
+          level: localRiskLevel 
+        } 
+      });
     } else {
       setCurrentIndex((prev) => prev + 1);
       startTimeRef.current = null;
@@ -133,10 +152,17 @@ export default function WritingExercise() {
   const exerciseContent = (
     <div className="w-full" onPointerDown={handleCanvasInteraction}>
       {/* Prompt */}
-      <div className="text-center mb-6">
-        <p className="text-lg text-muted-foreground mb-2">Write this word:</p>
-        <div className="flex items-center justify-center gap-4">
-          <span className="text-5xl font-bold text-foreground tracking-wide">
+      <div className="text-center mb-10">
+        <p className="text-lg text-muted-foreground mb-4 font-medium italic">Trace this letter:</p>
+        <div className="flex flex-col items-center justify-center gap-6">
+          <span 
+            className="font-bold text-foreground leading-none select-none"
+            style={{ 
+              fontSize: '160px', 
+              fontFamily: '"OpenDyslexic", "Inter", sans-serif',
+              textShadow: '2px 2px 0px rgba(0,0,0,0.05)'
+            }}
+          >
             {currentWord}
           </span>
           <TextToSpeech text={currentWord} />
@@ -165,10 +191,10 @@ export default function WritingExercise() {
           </button>
           <div className="flex items-center gap-2">
             <BookOpen className="w-5 h-5 text-primary" />
-            <span className="font-semibold text-foreground">Writing Practice</span>
+            <span className="font-semibold text-foreground">Letter Tracing</span>
           </div>
-          <div className="text-sm text-muted-foreground font-medium">
-            {currentIndex + 1} / {PROMPTS.length}
+          <div className="text-sm text-muted-foreground font-medium bg-muted px-3 py-1 rounded-full">
+            Letter {currentIndex + 1} of {prompts.length}
           </div>
         </div>
       </header>

@@ -44,7 +44,7 @@ export async function loadDyslexiaModel() {
   modelLoading = true;
   try {
     await tflite.setWasmPath(
-      'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite/dist/'
+      'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@0.0.1-alpha.10/dist/'
     );
     model = await tflite.loadTFLiteModel(FIREBASE_ML_MODEL_URL);
     console.log('[NeuroLearn ML] TFLite model loaded from Firebase ML');
