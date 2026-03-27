@@ -12,6 +12,7 @@ function getApp() {
 
   return initializeApp({
     credential: serviceAccount ? cert(serviceAccount) : undefined,
+    storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
   });
 }
 

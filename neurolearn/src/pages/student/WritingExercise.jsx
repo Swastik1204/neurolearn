@@ -29,6 +29,7 @@ export default function WritingExercise() {
   const [wordTimings, setWordTimings] = useState([]);
   const startTimeRef = useRef(null);
 
+  const letterResultsRef = useRef([]);
   const [isAnalysing, setIsAnalysing] = useState(false);
   const [letterFeedback, setLetterFeedback] = useState(null);
   const [letterResults, setLetterResults] = useState([]);
@@ -106,7 +107,11 @@ export default function WritingExercise() {
       };
 
       setLetterFeedback(feedback);
-      setLetterResults(prev => [...prev, feedback]);
+      setLetterResults(prev => {
+        const next = [...prev, feedback];
+        letterResultsRef.current = next;
+        return next;
+      });
 
       // Wait 2 seconds for feedback display, then move on
       setTimeout(() => {
@@ -148,7 +153,7 @@ export default function WritingExercise() {
     } catch (err) {
       console.error('Session save failed:', err.message);
     }
-    navigate('/student/complete', { state: { letterResults: [...letterResults] } });
+    navigate('/student/complete', { state: { letterResults: letterResultsRef.current } });
   };
 
   // Start timer on first interaction with a new word

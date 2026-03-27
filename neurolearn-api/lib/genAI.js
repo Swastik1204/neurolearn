@@ -1,6 +1,6 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-const API_KEY = process.env.VITE_GENAI_API_KEY || process.env.GENAI_API_KEY; // Accommodate Vercel/Node environment variables
+const API_KEY = process.env.GENAI_API_KEY;
 const genAI = new GoogleGenerativeAI(API_KEY);
 
 const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });

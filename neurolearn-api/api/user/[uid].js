@@ -3,7 +3,7 @@ import { adminDb, adminAuth, adminStorage } from '../../lib/firebaseAdmin.js';
 import { verifyToken, getUserRole, auditLog } from '../../lib/auth.js';
 
 export default async function handler(req, res) {
-  setCors(res);
+  setCors(req, res);
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'DELETE') {
     return res.status(405).json({ error: 'Method not allowed' });
