@@ -32,7 +32,7 @@ export default function BehaviourTab({ studentId }) {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <span className="w-8 h-8 border-3 border-primary/30 border-t-primary rounded-full animate-spin" />
+        <span className="loading loading-spinner loading-md text-primary" />
       </div>
     );
   }
@@ -41,7 +41,7 @@ export default function BehaviourTab({ studentId }) {
     <div className="space-y-6 animate-fade-in">
       {/* Focus Drop Alert */}
       {focusDrop && (
-        <div className="flex items-center gap-3 p-4 rounded-xl border border-warning/40 bg-warning/5">
+        <div className="alert alert-warning">
           <AlertTriangle className="w-5 h-5 text-warning flex-shrink-0" />
           <div>
             <p className="font-semibold text-foreground text-sm">Focus drop detected</p>
@@ -56,45 +56,49 @@ export default function BehaviourTab({ studentId }) {
       <BehaviourHeatmap data={heatmapData} />
 
       {/* Error Corrections by Day */}
-      <ScoreBar
-        data={errorByDay}
-        dataKey="score"
-        label="Error Corrections by Day"
-        color="#F4A728"
-      />
+      <div style={{ minHeight: '200px' }}>
+        <ScoreBar
+          data={errorByDay}
+          dataKey="score"
+          label="Error Corrections by Day"
+          color="#F4A728"
+        />
+      </div>
 
       {/* Session Stats */}
       {latestSnapshot && (
-        <div className="bg-card rounded-xl border border-border p-5 shadow-sm">
+        <div className="card bg-base-100 border border-border shadow-sm">
+          <div className="card-body">
           <h3 className="font-semibold text-foreground mb-4">This Week's Summary</h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
-            <div>
-              <div className="text-2xl font-bold text-foreground">
+          <div className="stats stats-vertical md:stats-horizontal border border-border bg-base-100">
+            <div className="stat text-center">
+              <div className="stat-value text-foreground">
                 {latestSnapshot.tasksAttempted || 0}
               </div>
-              <div className="text-xs text-muted-foreground mt-1">Tasks Attempted</div>
+              <div className="stat-title">Tasks Attempted</div>
             </div>
-            <div>
-              <div className="text-2xl font-bold text-foreground">
+            <div className="stat text-center">
+              <div className="stat-value text-foreground">
                 {latestSnapshot.tasksCompleted || 0}
               </div>
-              <div className="text-xs text-muted-foreground mt-1">Tasks Completed</div>
+              <div className="stat-title">Tasks Completed</div>
             </div>
-            <div>
-              <div className="text-2xl font-bold text-foreground">
+            <div className="stat text-center">
+              <div className="stat-value text-foreground">
                 {latestSnapshot.avgSessionDuration ? `${Math.round(latestSnapshot.avgSessionDuration / 60000)}m` : '—'}
               </div>
-              <div className="text-xs text-muted-foreground mt-1">Avg Session</div>
+              <div className="stat-title">Avg Session</div>
             </div>
-            <div>
-              <div className={`text-2xl font-bold ${
+            <div className="stat text-center">
+              <div className={`stat-value ${
                 latestSnapshot.performanceTrend === 'improving' ? 'text-success' :
                 latestSnapshot.performanceTrend === 'regressing' ? 'text-destructive' : 'text-foreground'
               }`}>
                 {latestSnapshot.performanceTrend?.charAt(0).toUpperCase() + latestSnapshot.performanceTrend?.slice(1) || '—'}
               </div>
-              <div className="text-xs text-muted-foreground mt-1">Trend</div>
+              <div className="stat-title">Trend</div>
             </div>
+          </div>
           </div>
         </div>
       )}

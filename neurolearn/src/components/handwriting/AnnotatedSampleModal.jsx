@@ -142,7 +142,9 @@ export default function AnnotatedSampleModal({ sample, analysisResult, onClose }
               </div>
 
               {/* Score breakdown */}
-              <ScoreBar data={scoreData} label="Score Breakdown" color="#5B4FCF" />
+              <div className="w-full">
+                <ScoreBar data={scoreData} label="Score Breakdown" color="#5B4FCF" />
+              </div>
 
               {/* AI Interpretation */}
               {analysisResult.geminiInterpretation && (

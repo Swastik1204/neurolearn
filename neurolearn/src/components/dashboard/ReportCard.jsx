@@ -4,11 +4,17 @@ import { downloadReportPDF } from '@/utils/pdfExport';
 import { FileText, Download, RefreshCw, Calendar } from 'lucide-react';
 import { formatDate } from '@/utils/dateUtils';
 
-export default function ReportCard({ report, studentName, studentId, onReportGenerated }) {
+export default function ReportCard({ report, studentName, studentId, onReportGenerated, analysisResultsCount = 0 }) {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState(null);
+  const canGenerate = analysisResultsCount >= 3;
 
   const handleGenerate = async () => {
+    if (!canGenerate) {
+      setError(`Need at least 3 analysis results before generating a report (currently ${analysisResultsCount}).`);
+      return;
+    }
+
     setGenerating(true);
     setError(null);
     try {
@@ -19,6 +25,7 @@ export default function ReportCard({ report, studentName, studentId, onReportGen
       const res = await generateReport({
         studentId,
         weekStartDate: weekStart.toISOString().split('T')[0],
+        forceRegenerate: !!report,
       });
 
       if (onReportGenerated) onReportGenerated(res.data);
@@ -41,7 +48,8 @@ export default function ReportCard({ report, studentName, studentId, onReportGen
   };
 
   return (
-    <div className="bg-card rounded-xl border border-border p-6 shadow-sm">
+    <div className="card bg-base-100 border border-border shadow-sm">
+      <div className="card-body">
       {report ? (
         <>
           <div className="flex items-center justify-between mb-4">
@@ -57,13 +65,24 @@ export default function ReportCard({ report, studentName, studentId, onReportGen
                 </p>
               </div>
             </div>
-            <button
-              onClick={handleDownloadPDF}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg border border-border text-sm font-medium text-foreground hover:bg-muted transition-all"
-            >
-              <Download className="w-4 h-4" />
-              PDF
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleGenerate}
+                disabled={generating || !canGenerate}
+                className="btn btn-sm"
+                title={!canGenerate ? `Need at least 3 samples (${analysisResultsCount} recorded)` : ''}
+              >
+                {generating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                Regenerate
+              </button>
+              <button
+                onClick={handleDownloadPDF}
+                className="btn btn-sm btn-outline"
+              >
+                <Download className="w-4 h-4" />
+                PDF
+              </button>
+            </div>
           </div>
 
           <div className="prose prose-sm max-w-none text-foreground/90 leading-relaxed whitespace-pre-wrap">
@@ -76,7 +95,7 @@ export default function ReportCard({ report, studentName, studentId, onReportGen
               <ul className="space-y-2">
                 {report.recommendedActivities.map((activity, i) => (
                   <li key={i} className="flex items-start gap-2 text-sm text-foreground/80">
-                    <span className="w-5 h-5 rounded-full bg-primary/10 text-primary text-xs flex items-center justify-center flex-shrink-0 mt-0.5 font-semibold">
+                    <span className="badge badge-primary badge-sm mt-0.5">
                       {i + 1}
                     </span>
                     {activity}
@@ -100,15 +119,16 @@ export default function ReportCard({ report, studentName, studentId, onReportGen
             <p className="text-sm text-destructive mb-4">{error}</p>
           )}
 
-          <button
-            onClick={handleGenerate}
-            disabled={generating}
-            className="inline-flex items-center gap-2 px-6 py-3 rounded-xl gradient-primary text-white font-medium hover:opacity-90 transition-all disabled:opacity-50 shadow-md"
-          >
+          <button onClick={handleGenerate} disabled={generating || !canGenerate} className="btn btn-primary" title={!canGenerate ? `Need at least 3 samples (${analysisResultsCount} recorded)` : ''}>
             {generating ? (
               <>
                 <RefreshCw className="w-4 h-4 animate-spin" />
                 Generating...
+              </>
+            ) : !canGenerate ? (
+              <>
+                <RefreshCw className="w-4 h-4" />
+                Need 3+ samples to generate
               </>
             ) : (
               <>
@@ -119,6 +139,7 @@ export default function ReportCard({ report, studentName, studentId, onReportGen
           </button>
         </div>
       )}
+      </div>
     </div>
   );
 }

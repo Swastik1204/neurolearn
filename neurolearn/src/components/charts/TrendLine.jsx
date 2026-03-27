@@ -2,11 +2,11 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 
 export default function TrendLine({ data = [], dataKey = 'value', label = 'Score', color = '#5B4FCF' }) {
   return (
-    <div className="bg-card rounded-xl border border-border p-5 shadow-sm">
+    <div className="bg-card rounded-xl border border-border p-5 shadow-sm min-w-0">
       <h3 className="font-semibold text-foreground mb-4">{label} — 4 Week Trend</h3>
-      <div className="h-56 flex flex-col items-center justify-center">
+      <div className="w-full min-w-0" style={{ minHeight: '200px' }}>
         {data.length > 0 ? (
-          <ResponsiveContainer width="100%" height="100%" minHeight={200}>
+          <ResponsiveContainer width="100%" minHeight={200}>
             <LineChart data={data} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#E2E1D5" />
               <XAxis
@@ -38,7 +38,7 @@ export default function TrendLine({ data = [], dataKey = 'value', label = 'Score
             </LineChart>
           </ResponsiveContainer>
         ) : (
-          <div className="text-sm text-muted-foreground flex flex-col items-center gap-2">
+          <div className="text-sm text-muted-foreground flex flex-col items-center justify-center gap-2" style={{ minHeight: '200px' }}>
             <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
               📉
             </div>

@@ -1,12 +1,19 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
+import { collection, query, where, limit, getDocs, doc, getDoc } from 'firebase/firestore';
 import { db } from '@/services/firebase';
 import ReportCard from '@/components/dashboard/ReportCard';
+
+function asDate(value) {
+  if (!value) return new Date(0);
+  if (value?.toDate) return value.toDate();
+  return new Date(value);
+}
 
 export default function ReportTab({ studentId, studentName }) {
   const [reports, setReports] = useState([]);
   const [currentReport, setCurrentReport] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [analysisResultsCount, setAnalysisResultsCount] = useState(0);
 
   useEffect(() => {
     if (!studentId) return;
@@ -17,15 +24,44 @@ export default function ReportTab({ studentId, studentName }) {
         const q = query(
           collection(db, 'reports'),
           where('studentId', '==', studentId),
-          orderBy('generatedAt', 'desc'),
           limit(10)
         );
         const snap = await getDocs(q);
-        const data = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const data = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .sort((a, b) => {
+            const right = b.generatedAtISO || b.generatedAt;
+            const left = a.generatedAtISO || a.generatedAt;
+            return asDate(right) - asDate(left);
+          });
+
+        // Also fetch analysis results count for the min-3 gate
+        const analysisQ = query(
+          collection(db, 'analysisResults'),
+          where('studentId', '==', studentId),
+          limit(100)
+        );
+        const analysisSnap = await getDocs(analysisQ);
+        let nextCount = analysisSnap.size;
+
+        if (nextCount === 0) {
+          const studentDocSnap = await getDoc(doc(db, 'students', studentId));
+          const uid = studentDocSnap.exists() ? studentDocSnap.data()?.uid : null;
+          if (uid) {
+            const byUidQ = query(
+              collection(db, 'analysisResults'),
+              where('studentId', '==', uid),
+              limit(100)
+            );
+            const byUidSnap = await getDocs(byUidQ);
+            nextCount = byUidSnap.size;
+          }
+        }
 
         if (!cancelled) {
           setReports(data);
           setCurrentReport(data[0] || null);
+          setAnalysisResultsCount(nextCount);
           setLoading(false);
         }
       } catch (err) {
@@ -39,14 +75,18 @@ export default function ReportTab({ studentId, studentName }) {
   }, [studentId]);
 
   const handleReportGenerated = (newReport) => {
+    if (!newReport) return;
     setCurrentReport(newReport);
-    setReports((prev) => [newReport, ...prev]);
+    setReports((prev) => {
+      const withoutCurrent = prev.filter((r) => r.id !== newReport.id);
+      return [newReport, ...withoutCurrent];
+    });
   };
 
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <span className="w-8 h-8 border-3 border-primary/30 border-t-primary rounded-full animate-spin" />
+        <span className="loading loading-spinner loading-md text-primary" />
       </div>
     );
   }
@@ -59,6 +99,7 @@ export default function ReportTab({ studentId, studentName }) {
         studentName={studentName}
         studentId={studentId}
         onReportGenerated={handleReportGenerated}
+        analysisResultsCount={analysisResultsCount}
       />
 
       {/* Past Reports */}
@@ -70,7 +111,7 @@ export default function ReportTab({ studentId, studentName }) {
               <button
                 key={report.id}
                 onClick={() => setCurrentReport(report)}
-                className={`w-full text-left p-4 rounded-lg border transition-all ${
+                className={`btn btn-block h-auto justify-start text-left normal-case p-4 rounded-lg border transition-all ${
                   currentReport?.id === report.id
                     ? 'border-primary bg-primary/5'
                     : 'border-border hover:border-primary/30 hover:bg-muted'
@@ -81,7 +122,11 @@ export default function ReportTab({ studentId, studentName }) {
                     {report.weekStartDate ? `Week of ${report.weekStartDate}` : 'Report'}
                   </span>
                   <span className="text-xs text-muted-foreground">
-                    {report.generatedAt?.toDate ? report.generatedAt.toDate().toLocaleDateString() : ''}
+                    {report.generatedAt?.toDate
+                      ? report.generatedAt.toDate().toLocaleDateString()
+                      : report.generatedAtISO
+                        ? new Date(report.generatedAtISO).toLocaleDateString()
+                        : ''}
                   </span>
                 </div>
                 <p className="text-xs text-muted-foreground mt-1 line-clamp-2">

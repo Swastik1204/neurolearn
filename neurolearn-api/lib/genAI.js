@@ -5,6 +5,21 @@ const genAI = new GoogleGenerativeAI(API_KEY);
 
 const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
+/** Ensure sessions collection exists (backend helper) */
+export async function ensureSessionsCollectionBackend(adminDb) {
+  try {
+    await adminDb.collection('sessions').doc('_metadata').set(
+      {
+        createdAt: new Date(),
+        collectionInitialized: true,
+      },
+      { merge: true }
+    );
+  } catch (err) {
+    console.warn('Could not initialize sessions collection:', err.message);
+  }
+}
+
 /**
  * Generate a personalized lesson for a neurodivergent child.
  * @param {string} topic - The topic or word to teach
@@ -34,13 +49,14 @@ Keep the total response under 150 words.`;
  * @param {object} weekData - { childName, sessionsCompleted, avgScore, topIndicators }
  */
 export async function generateWeeklyReport(weekData) {
-  const { childName, sessionsCompleted, avgScore, topIndicators } = weekData;
+  const { childName, sessionsCompleted, avgScore, topIndicators, emotionSummary } = weekData;
   const prompt = `You are a specialist educational psychologist writing a brief weekly
 progress note for a parent of a child with dyslexia.
 Child: ${childName}
 Sessions this week: ${sessionsCompleted}
 Average performance score: ${avgScore}/100
 Key observations: ${topIndicators?.join(', ') || 'General writing practice'}
+Emotion context this week: ${emotionSummary || 'No reliable emotion signal captured'}
 
 Write exactly 3 short paragraphs:
 1. What went well this week (encouraging, specific)

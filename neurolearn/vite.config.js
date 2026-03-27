@@ -8,6 +8,14 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
+  server: {
+    host: true, // Listen on all addresses, including localhost and 127.0.0.1
+    port: 5173,
+    hmr: {
+      protocol: 'ws',
+      host: 'localhost'
+    }
+  },
   resolve: {
     alias: [
       { find: '@', replacement: path.resolve(__dirname, './src') },

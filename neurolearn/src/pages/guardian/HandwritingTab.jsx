@@ -3,12 +3,15 @@ import { collection, query, where, orderBy, limit, getDocs } from 'firebase/fire
 import { db } from '@/services/firebase';
 import SampleGrid from '@/components/handwriting/SampleGrid';
 import AnnotatedSampleModal from '@/components/handwriting/AnnotatedSampleModal';
+import { deleteHandwritingExercise } from '@/services/api';
 
 export default function HandwritingTab({ studentId }) {
   const [samples, setSamples] = useState([]);
   const [selectedSample, setSelectedSample] = useState(null);
   const [analysisResult, setAnalysisResult] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!studentId) return;
@@ -59,6 +62,24 @@ export default function HandwritingTab({ studentId }) {
     }
   };
 
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
+    try {
+      await deleteHandwritingExercise(deleteTarget.id);
+      setSamples((prev) => prev.filter((s) => s.id !== deleteTarget.id));
+      if (selectedSample?.id === deleteTarget.id) {
+        setSelectedSample(null);
+        setAnalysisResult(null);
+      }
+      setDeleteTarget(null);
+    } catch (err) {
+      console.error('Delete exercise failed:', err.message);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -69,7 +90,11 @@ export default function HandwritingTab({ studentId }) {
 
   return (
     <div className="animate-fade-in">
-      <SampleGrid samples={samples} onSampleClick={handleSampleClick} />
+      <SampleGrid
+        samples={samples}
+        onSampleClick={handleSampleClick}
+        onDeleteClick={(sample) => setDeleteTarget(sample)}
+      />
 
       {selectedSample && (
         <AnnotatedSampleModal
@@ -77,6 +102,41 @@ export default function HandwritingTab({ studentId }) {
           analysisResult={analysisResult}
           onClose={() => { setSelectedSample(null); setAnalysisResult(null); }}
         />
+      )}
+
+      {deleteTarget && (
+        <div className="modal modal-open">
+          <div className="modal-box">
+            <h3 className="font-bold text-lg">Delete Exercise?</h3>
+            <p className="py-3 text-sm text-muted-foreground">
+              This will delete the sample and its analysis for "{deleteTarget.promptWord || 'exercise'}".
+            </p>
+            <div className="modal-action">
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setDeleteTarget(null)}
+                disabled={deleting}
+              >
+                No
+              </button>
+              <button
+                type="button"
+                className="btn btn-error"
+                onClick={handleDeleteConfirm}
+                disabled={deleting}
+              >
+                {deleting ? 'Deleting...' : 'Yes, Delete'}
+              </button>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="modal-backdrop"
+            onClick={() => !deleting && setDeleteTarget(null)}
+            aria-label="Close"
+          />
+        </div>
       )}
     </div>
   );

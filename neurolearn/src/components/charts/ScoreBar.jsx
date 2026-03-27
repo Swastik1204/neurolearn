@@ -2,10 +2,10 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 
 export default function ScoreBar({ data = [], dataKey = 'score', label = 'Scores', color = '#5B4FCF' }) {
   return (
-    <div className="bg-card rounded-xl border border-border p-5 shadow-sm">
+    <div className="bg-card rounded-xl border border-border p-5 shadow-sm min-w-0">
       <h3 className="font-semibold text-foreground mb-4">{label}</h3>
-      <div className="h-48">
-        <ResponsiveContainer width="100%" height="100%">
+      <div className="w-full min-w-0" style={{ minHeight: '160px' }}>
+        <ResponsiveContainer width="100%" minHeight={160}>
           <BarChart data={data} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#E2E1D5" />
             <XAxis

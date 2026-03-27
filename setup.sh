@@ -18,13 +18,14 @@ npm install || true
 
 echo "[4/4] Installing ML Service Dependencies..."
 cd "$ROOT_DIR/neurolearn-ml" || exit
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt || true
+mkdir -p .deps
+python3 -m pip install --upgrade --target .deps -r requirements.txt || true
 
 echo "=============================================="
 echo " Setup Complete! "
 echo "=============================================="
 echo "To start developing:"
-echo "  - Separately run: 'npm run dev:frontend', 'npm run dev:api', 'npm run dev:ml'"
+echo "  - Frontend: cd neurolearn && npm run dev"
+echo "  - API: cd neurolearn-api && npm run serve"
+echo "  - ML: cd neurolearn-ml && PYTHONPATH=.deps python3 -m uvicorn main:app --host 127.0.0.1 --port 8000"
 echo "=============================================="

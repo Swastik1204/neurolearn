@@ -1,6 +1,16 @@
-import { Image as ImageIcon } from 'lucide-react';
+import { Image as ImageIcon, Trash2 } from 'lucide-react';
 
-export default function SampleGrid({ samples = [], onSampleClick }) {
+const EMOTION_EMOJI = {
+  happy: '🙂',
+  sad: '😢',
+  angry: '😠',
+  fearful: '😨',
+  disgusted: '🤢',
+  surprised: '😮',
+  neutral: '😐',
+};
+
+export default function SampleGrid({ samples = [], onSampleClick, onDeleteClick }) {
   if (samples.length === 0) {
     return (
       <div className="text-center py-12">
@@ -15,17 +25,21 @@ export default function SampleGrid({ samples = [], onSampleClick }) {
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
       {samples.map((sample) => (
-        <button
+        <div
           key={sample.id}
-          onClick={() => onSampleClick(sample)}
           className="group relative aspect-[3/1] rounded-xl border-2 border-border overflow-hidden bg-[#FAFAF7] hover:border-primary/50 transition-all shadow-sm hover:shadow-md"
         >
-          <img
-            src={sample.imageBase64 || sample.imageUrl}
-            alt={`Handwriting sample: ${sample.promptWord || 'writing'}`}
-            className="w-full h-full object-contain p-2"
-            loading="lazy"
-          />
+          <button
+            onClick={() => onSampleClick(sample)}
+            className="w-full h-full"
+          >
+            <img
+              src={sample.imageBase64 || sample.imageUrl}
+              alt={`Handwriting sample: ${sample.promptWord || 'writing'}`}
+              className="w-full h-full object-contain p-2"
+              loading="lazy"
+            />
+          </button>
 
           {/* Status badge */}
           <div className="absolute top-2 right-2">
@@ -41,10 +55,26 @@ export default function SampleGrid({ samples = [], onSampleClick }) {
             </span>
           </div>
 
-          {/* Hover overlay */}
-          <div className="absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-            <span className="text-sm font-medium text-primary bg-white/80 px-3 py-1 rounded-lg">
-              View Analysis
+          {/* Delete action */}
+          {onDeleteClick && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onDeleteClick(sample);
+              }}
+              className="absolute top-2 left-2 w-8 h-8 rounded-lg bg-error/90 hover:bg-error text-white flex items-center justify-center transition-all z-10"
+              aria-label="Delete exercise"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
+
+          {/* Hover overlay with clickable hint */}
+          <div className="absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
+            <span className="text-sm font-medium text-primary bg-white/90 px-3 py-1.5 rounded-lg shadow-sm">
+              Click to View
             </span>
           </div>
 
@@ -54,7 +84,13 @@ export default function SampleGrid({ samples = [], onSampleClick }) {
               "{sample.promptWord}"
             </div>
           )}
-        </button>
+
+          {sample.emotionAtSubmit && (
+            <div className="absolute bottom-2 right-2 text-xs font-medium text-foreground bg-white/85 px-2 py-0.5 rounded">
+              {EMOTION_EMOJI[sample.emotionAtSubmit] || '😐'} {sample.emotionAtSubmit}
+            </div>
+          )}
+        </div>
       ))}
     </div>
   );
