@@ -1,5 +1,5 @@
 import { setCors } from '../../lib/cors.js';
-import { adminDb, adminAuth, adminStorage } from '../../lib/firebaseAdmin.js';
+import { adminDb, adminAuth } from '../../lib/firebaseAdmin.js';
 import { verifyToken, getUserRole, auditLog } from '../../lib/auth.js';
 
 export default async function handler(req, res) {
@@ -58,15 +58,6 @@ export default async function handler(req, res) {
     const studentBatch = adminDb.batch();
     studentSnap.docs.forEach(doc => studentBatch.delete(doc.ref));
     if (studentSnap.docs.length > 0) await studentBatch.commit();
-
-    // Delete Firebase Storage files
-    try {
-      const bucket = adminStorage.bucket();
-      const [files] = await bucket.getFiles({ prefix: `handwriting/${uid}/` });
-      await Promise.all(files.map(f => f.delete()));
-    } catch (storageError) {
-      console.error('Storage deletion error (non-fatal):', storageError.message);
-    }
 
     // Delete Firebase Auth user
     try {
