@@ -50,6 +50,8 @@ async def load_models():
 class AnalyzeRequest(BaseModel):
     image_base64: str
     sample_id: str
+    student_id: str
+    letter: str = ""
     stroke_metadata: dict = {}
 
 class AnalyzeResponse(BaseModel):
@@ -145,7 +147,7 @@ async def health():
         "rf_accuracy": metadata.get("rf_accuracy", "unknown")
     }
 
-@app.post("/analyze", response_model=AnalyzeResponse)
+@app.post("/analyze")
 async def analyze(req: AnalyzeRequest):
     try:
         raw = req.image_base64
@@ -174,10 +176,28 @@ async def analyze(req: AnalyzeRequest):
             speed_variance = req.stroke_metadata.get('speedVariance', 0)
             timing_risk = min(pause_ratio * 0.4 + speed_variance * 0.1, 0.3)
             combined_risk = min(risk_proba * 0.7 + timing_risk, 1.0)
+        # Per-letter diagnostic logic
+        target_letter = req.letter.lower()
+        letter_specific = {}
+        
+        if target_letter in ['b', 'd']:
+            # Example: check horizontal symmetry for b/d reversal
+            h_sym = float(f[14]) 
+            reversal_val = "High" if h_sym > 0.7 else "Medium" if h_sym > 0.4 else "Low"
+            letter_specific = {
+                "reversal_risk": reversal_val,
+                "note": f"Handwriting shows potential {target_letter} reversal patterns." if h_sym > 0.5 else "Standard form."
+            }
+        elif target_letter in ['g', 'y', 'p', 'q', 'j']:
+            # Example: check descender quality (vertical distribution)
+            v_var = float(f[11])
+            descender_val = "Consistent" if v_var > 0.3 else "Short/Inconsistent"
+            letter_specific = {
+                "descender_quality": descender_val,
+                "note": "Descenders are well-formed." if v_var > 0.3 else "Focus on extending tails below the line."
+            }
         else:
-            # Fallback when model not loaded
-            combined_risk = 0.3
-            raw_features = [0.0] * 20
+            letter_specific = { "general_form": "Good alignment" if f[3] < 0.2 else "Needs baseline focus" }
 
         # Compute individual dimension scores (0–100)
         f = raw_features
@@ -208,6 +228,8 @@ async def analyze(req: AnalyzeRequest):
         if webhook_url and webhook_secret:
             payload = {
                 "sampleId": req.sample_id,
+                "studentId": req.student_id,
+                "letter": target_letter,
                 "scores": {
                     "letterFormScore": round(letter_form_score, 1),
                     "spacingScore": round(spacing_score, 1),
@@ -216,6 +238,9 @@ async def analyze(req: AnalyzeRequest):
                     "overallRisk": round(combined_risk, 3),
                 },
                 "indicators": indicators,
+                "letterSpecific": letter_specific,
+                "overallRisk": round(combined_risk, 3),
+                "riskLevel": risk_level,
                 "rawFeatures": {f"f{i}": v for i, v in enumerate(raw_features)},
             }
             try:
@@ -226,8 +251,8 @@ async def analyze(req: AnalyzeRequest):
                         headers={"X-ML-Secret": webhook_secret},
                         timeout=10
                     )
-            except Exception:
-                pass  # Don't fail the analysis if webhook fails
+            except Exception as e:
+                print(f"Webhook failed: {e}")
 
         return AnalyzeResponse(
             sample_id=req.sample_id,

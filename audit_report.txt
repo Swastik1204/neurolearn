@@ -1,0 +1,2626 @@
+============================
+SECTION 1 — GIT STATE
+============================
+3c62298 fix: resolve handwriting pipeline issues with logging and consistent firestore writes
+533ca64 feat: complete handwriting diagnostic pipeline with per-letter scoring, Gemini interpretations, and CORS fixes
+541ddc6 Update
+cc5c709 chore: full sync - ml secrets, environment hardening, and submission checklist
+74b5443 chore: sync ml secrets, harden env loading and add submission checklist
+0ab8fa7 chore: remove merge artifacts and debug scripts, clean up obsolete files
+5a3bff7 Single letter tracing adaptation, square canvas, and legacy cleanup
+673b0be Package install update
+2dc4b9d Package install update
+d5026be Package install update
+f347ced Implement Link Student feature and fix Firestore auth/permission crashes
+50cdb12 fix: restore api routing in vercel.json while maintaining CORS headers
+8511eed fix: explicit CORS headers in vercel.json for preflight support
+12b6ad1 fix: API CORS to support multiple origins and dynamic reflection
+f5477f4 feat: migrate handwriting samples to Base64 to bypass Storage CORS issues
+520514b feat: serve TFLite model from Firebase Hosting public folder
+51dd0f2 chore: remove tflite from tracking, serve via public/ instead
+44ed81e fix: serve TFLite model from GitHub raw URL
+54dd56b fix: serve TFLite model from GitHub raw URL
+cac88e7 feat: add TFLite model for browser inference
+
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   neurolearn-api/api/analyze-handwriting.js
+	modified:   neurolearn-api/api/webhook/ml-result.js
+	modified:   neurolearn-ml/main.py
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	audit_report.txt
+	auto_audit.py
+
+no changes added to commit (use "git add" and/or "git commit -a")
+
+ BEFORE_SUBMISSION.md                               |  53 ++++++
+ neurolearn-api/api/analyze-handwriting.js          |  83 +++++++-
+ neurolearn-api/api/generate-lesson.js              |   8 +-
+ neurolearn-api/api/generate-report.js              |   1 +
+ neurolearn-api/api/student-summary/[studentId].js  |   3 +-
+ neurolearn-api/api/webhook/ml-result.js            |  60 ++++--
+ neurolearn-api/lib/cors.js                         |   5 +-
+ neurolearn-api/lib/genAI.js                        |  32 ++++
+ neurolearn-api/vercel.json                         |  22 +--
+ neurolearn-ml/main.py                              |  99 +++++++---
+ neurolearn-ml/models/model_metadata.json           |   8 +-
+ neurolearn-ml/requirements.txt                     | Bin 218 -> 259 bytes
+ neurolearn/.firebase/hosting.ZGlzdA.cache          |  21 +-
+ neurolearn/firestore.rules                         |  54 +-----
+ neurolearn/package-lock.json                       |  43 +----
+ neurolearn/package.json                            |   1 -
+ neurolearn/src/components/charts/TrendLine.jsx     |  73 +++----
+ .../handwriting/AnnotatedSampleModal.jsx           |  15 +-
+ neurolearn/src/mock_tflite_web_api_client.js       |   2 -
+ neurolearn/src/pages/guardian/BehaviourTab.jsx     |   1 +
+ neurolearn/src/pages/guardian/OverviewTab.jsx      |  48 +++--
+ neurolearn/src/pages/student/ExerciseComplete.jsx  | 103 +++++++---
+ neurolearn/src/pages/student/WritingExercise.jsx   | 211 +++++++++++++--------
+ neurolearn/src/services/firebase.js                |   3 +-
+ neurolearn/src/services/mlService.js               | 114 ++---------
+ neurolearn/vite.config.js                          |   3 -
+ requirements.txt                                   |  26 ---
+ 27 files changed, 639 insertions(+), 453 deletions(-)
+
+neurolearn-api/package-lock.json
+neurolearn-api/package.json
+neurolearn-api/vercel.json
+neurolearn-ml/models/model_metadata.json
+neurolearn/.env
+neurolearn/.env.example
+neurolearn/firebase.json
+neurolearn/firestore.indexes.json
+neurolearn/functions/package.json
+neurolearn/jsconfig.json
+neurolearn/package-lock.json
+neurolearn/package.json
+
+============================
+SECTION 2 — DIRECTORY TREE
+============================
+audit_report.txt
+auto_audit.py
+BEFORE_SUBMISSION.md
+DEPLOY.md
+neurolearn
+neurolearn\.env
+neurolearn\.env.example
+neurolearn\.env.local
+neurolearn\.firebaserc
+neurolearn\.gitignore
+neurolearn\eslint.config.js
+neurolearn\firebase.json
+neurolearn\firestore.indexes.json
+neurolearn\firestore.rules
+neurolearn\functions
+neurolearn\functions\index.js
+neurolearn\functions\package.json
+neurolearn\index.html
+neurolearn\jsconfig.json
+neurolearn\package-lock.json
+neurolearn\package.json
+neurolearn\public
+neurolearn\public\dyslexia_cnn.tflite
+neurolearn\public\favicon.svg
+neurolearn\public\icons.svg
+neurolearn\public\index.html
+neurolearn\public\manifest.webmanifest
+neurolearn\public\sw.js
+neurolearn\README.md
+neurolearn\src
+neurolearn\src\App.jsx
+neurolearn\src\assets
+neurolearn\src\assets\hero.png
+neurolearn\src\assets\react.svg
+neurolearn\src\assets\vite.svg
+neurolearn\src\components
+neurolearn\src\components\AuthGuard.jsx
+neurolearn\src\components\canvas
+neurolearn\src\components\charts
+neurolearn\src\components\dashboard
+neurolearn\src\components\FocusMode.jsx
+neurolearn\src\components\handwriting
+neurolearn\src\components\LinkStudentModal.jsx
+neurolearn\src\components\OfflineBanner.jsx
+neurolearn\src\components\StudentListPanel.jsx
+neurolearn\src\components\TextToSpeech.jsx
+neurolearn\src\hooks
+neurolearn\src\hooks\useAnalysisResults.js
+neurolearn\src\hooks\useCurrentUser.js
+neurolearn\src\hooks\useStudentData.js
+neurolearn\src\index.css
+neurolearn\src\lib
+neurolearn\src\lib\utils.js
+neurolearn\src\main.jsx
+neurolearn\src\pages
+neurolearn\src\pages\auth
+neurolearn\src\pages\guardian
+neurolearn\src\pages\student
+neurolearn\src\pages\teacher
+neurolearn\src\router.jsx
+neurolearn\src\services
+neurolearn\src\services\api.js
+neurolearn\src\services\firebase.js
+neurolearn\src\services\mlService.js
+neurolearn\src\store
+neurolearn\src\store\authStore.js
+neurolearn\src\utils
+neurolearn\src\utils\canvasUtils.js
+neurolearn\src\utils\dateUtils.js
+neurolearn\src\utils\pdfExport.js
+neurolearn\vite.config.js
+neurolearn-api
+neurolearn-api\.env.local
+neurolearn-api\.gitignore
+neurolearn-api\api
+neurolearn-api\api\analyze-handwriting.js
+neurolearn-api\api\generate-lesson.js
+neurolearn-api\api\generate-report.js
+neurolearn-api\api\student-summary
+neurolearn-api\api\student-summary\[studentId].js
+neurolearn-api\api\user
+neurolearn-api\api\user\[uid].js
+neurolearn-api\api\webhook
+neurolearn-api\api\webhook\ml-result.js
+neurolearn-api\lib
+neurolearn-api\lib\auth.js
+neurolearn-api\lib\cors.js
+neurolearn-api\lib\firebaseAdmin.js
+neurolearn-api\lib\genAI.js
+neurolearn-api\package-lock.json
+neurolearn-api\package.json
+neurolearn-api\vercel.json
+neurolearn-ml
+neurolearn-ml\.env
+neurolearn-ml\.gitignore
+neurolearn-ml\classifier.py
+neurolearn-ml\features.py
+neurolearn-ml\firebase_service_account.json
+neurolearn-ml\main.py
+neurolearn-ml\models
+neurolearn-ml\models\dyslexia_classifier.pkl
+neurolearn-ml\models\dyslexia_cnn.h5
+neurolearn-ml\models\dyslexia_cnn.tflite
+neurolearn-ml\models\dyslexia_cnn_best.h5
+neurolearn-ml\models\feature_importance.png
+neurolearn-ml\models\feature_scaler.pkl
+neurolearn-ml\models\model_metadata.json
+neurolearn-ml\models\README.md
+neurolearn-ml\models\training_history.png
+neurolearn-ml\preprocess.py
+neurolearn-ml\requirements.txt
+neurolearn-ml\segmentation.py
+neurolearn-ml\templates
+neurolearn-ml\templates\README.md
+neurolearn-ml\train.py
+neurolearn-ml\training_log.txt
+setup.bat
+setup.sh
+
+============================
+SECTION 3 — FRONTEND
+============================
+=== package.json ===
+{
+  "name": "neurolearn",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "eslint .",
+    "deploy": "vite build && firebase deploy --only hosting",
+    "deploy:rules": "firebase deploy --only \"firestore:rules\"",
+    "deploy:functions": "firebase deploy --only functions",
+    "deploy:all": "vite build && firebase deploy --only \"hosting,firestore:rules\""
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "@sentry/react": "^10.45.0",
+    "@tailwindcss/vite": "^4.2.2",
+    "@tanstack/react-query": "^5.94.5",
+    "@tensorflow/tfjs": "^4.22.0",
+    "axios": "^1.13.6",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "date-fns": "^4.1.0",
+    "firebase": "^12.11.0",
+    "jspdf": "^4.2.1",
+    "lucide-react": "^0.577.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-is": "^19.2.4",
+    "react-router-dom": "^7.13.1",
+    "recharts": "^3.8.0",
+    "tailwind-merge": "^3.5.0",
+    "tailwindcss": "^4.2.2",
+    "zustand": "^5.0.12"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "eslint": "^9.39.4",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "globals": "^17.4.0",
+    "vite": "^8.0.1"
+  }
+}
+
+=== vite.config.js ===
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
+import path from 'path'
+
+export default defineConfig({
+  plugins: [
+    react(),
+    tailwindcss(),
+  ],
+  resolve: {
+    alias: [
+      { find: '@', replacement: path.resolve(__dirname, './src') },
+    ],
+  },
+  optimizeDeps: {
+    include: ['long', 'seedrandom'],
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('firebase')) return 'firebase';
+            if (id.includes('@google/generative-ai')) return 'gemini';
+            if (id.includes('recharts')) return 'charts';
+            if (id.includes('jspdf') || id.includes('html2canvas')) return 'pdf';
+            if (id.includes('@tensorflow')) return 'tensorflow';
+          }
+        }
+      }
+    },
+    chunkSizeWarningLimit: 600
+  }
+})
+=== src/main.jsx ===
+import { StrictMode } from 'react';
+import { createRoot } from 'react-dom/client';
+import App from './App.jsx';
+
+// Register service worker for PWA offline support
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').then((reg) => {
+      console.log('NeuroLearn SW registered:', reg.scope);
+
+      // Check for updates
+      reg.addEventListener('updatefound', () => {
+        const newWorker = reg.installing;
+        if (newWorker) {
+          newWorker.addEventListener('statechange', () => {
+            if (newWorker.state === 'activated' && navigator.serviceWorker.controller) {
+              if (confirm('New version of NeuroLearn is available. Update now?')) {
+                window.location.reload();
+              }
+            }
+          });
+        }
+      });
+    }).catch((err) => {
+      console.error('SW registration failed:', err);
+    });
+  });
+}
+
+createRoot(document.getElementById('root')).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+);
+
+=== src/services/mlService.js ===
+// mlService.js — TFLite removed, server-side analysis handles all scoring
+const mlService = {
+  isLoaded: false,
+
+  async initialize() {
+    console.log('[NeuroLearn ML] Using server-side analysis only.');
+    this.isLoaded = false;
+    return false;
+  },
+
+  async analyzeHandwriting(canvas) {
+    // Always return null — WritingExercise.jsx handles the server fallback
+    return null;
+  }
+};
+
+export default mlService;
+
+=== src/services/api.js ===
+import axios from 'axios';
+import { auth } from './firebase';
+
+const api = axios.create({
+  baseURL: import.meta.env.VITE_VERCEL_API_URL || 'http://localhost:3000',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// Attach Firebase auth token to every request
+api.interceptors.request.use(async (config) => {
+  try {
+    const user = auth.currentUser;
+    if (user) {
+      const token = await user.getIdToken();
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+  } catch (error) {
+    console.error('Error getting auth token:', error.message);
+  }
+  return config;
+});
+
+// Response interceptor for error handling
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      window.location.href = '/login';
+    }
+    return Promise.reject(error);
+  }
+);
+
+export const analyzeHandwriting = (data) =>
+  api.post('/api/analyze-handwriting', data);
+
+export const generateReport = (data) =>
+  api.post('/api/generate-report', data);
+
+export const getStudentSummary = (studentId) =>
+  api.get(`/api/student-summary/${studentId}`);
+
+export const deleteUser = (uid) =>
+  api.delete(`/api/user/${uid}`);
+
+export default api;
+
+=== src/services/firebase.js ===
+import { initializeApp } from 'firebase/app';
+import { getAuth, GoogleAuthProvider, browserLocalPersistence, setPersistence } from 'firebase/auth';
+import { getFirestore } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
+
+const firebaseConfig = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+};
+
+const app = initializeApp(firebaseConfig);
+export const auth = getAuth(app);
+setPersistence(auth, browserLocalPersistence);
+export const db = getFirestore(app);
+export const storage = getStorage(app);
+export const googleProvider = new GoogleAuthProvider();
+
+export default app;
+
+=== src/store/authStore.js ===
+import { create } from 'zustand';
+import { auth, db } from '@/services/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
+
+const useAuthStore = create((set, get) => ({
+  user: null,
+  role: null,
+  studentIds: [],
+  loading: true,
+  initialized: false,
+
+  setUser: (user, role, studentIds = []) =>
+    set({ user, role, studentIds, loading: false }),
+
+  clearUser: () =>
+    set({ user: null, role: null, studentIds: [], loading: false }),
+
+  initialize: () => {
+    if (get().initialized) return;
+    set({ initialized: true });
+
+    onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        try {
+          const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+          if (userDoc.exists()) {
+            const userData = userDoc.data();
+            set({
+              user: {
+                uid: firebaseUser.uid,
+                email: firebaseUser.email,
+                displayName: firebaseUser.displayName || userData.displayName,
+                photoURL: firebaseUser.photoURL,
+              },
+              role: userData.role,
+              studentIds: userData.linkedStudentIds || [],
+              loading: false,
+            });
+          } else {
+            // User exists in Auth but not in Firestore yet
+            set({
+              user: {
+                uid: firebaseUser.uid,
+                email: firebaseUser.email,
+                displayName: firebaseUser.displayName,
+                photoURL: firebaseUser.photoURL,
+              },
+              role: null,
+              studentIds: [],
+              loading: false,
+            });
+          }
+        } catch (error) {
+          console.error('Signup error full details (authStore):', error.code, error.message, error);
+          set({ user: null, role: null, studentIds: [], loading: false });
+        }
+      } else {
+        set({ user: null, role: null, studentIds: [], loading: false });
+      }
+    });
+  },
+}));
+
+export default useAuthStore;
+
+=== src/components/auth/AuthGuard.jsx ===
+neurolearn\src\components\auth\AuthGuard.jsx not found
+=== src/pages/student/WritingExercise.jsx ===
+import { useState, useRef, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '@/services/firebase';
+import useCurrentUser from '@/hooks/useCurrentUser';
+import WritingCanvas from '@/components/canvas/WritingCanvas';
+import TextToSpeech from '@/components/TextToSpeech';
+import FocusMode from '@/components/FocusMode';
+import { analyzeHandwriting } from '@/services/api';
+import mlService from '../../services/mlService';
+import { BookOpen, ArrowLeft, ChevronRight } from 'lucide-react';
+
+const DEFAULT_LETTERS = ['b', 'd', 'p', 'q', 'g', 'y', 'f', 'h', 'n', 'm'];
+
+export default function WritingExercise() {
+  const { user } = useCurrentUser();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const [prompts] = useState(() => {
+    if (location.state?.words && location.state.words.length > 0) {
+      return location.state.words.map(w => w[0].toUpperCase());
+    }
+    return DEFAULT_LETTERS.map(l => l.toUpperCase());
+  });
+
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [sessionId] = useState(() => `session_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`);
+  const [wordTimings, setWordTimings] = useState([]);
+  const startTimeRef = useRef(null);
+
+  const [isAnalysing, setIsAnalysing] = useState(false);
+  const [letterFeedback, setLetterFeedback] = useState(null);
+  const [letterResults, setLetterResults] = useState([]);
+
+  // Initialization if any (mlService handled)
+  useEffect(() => {
+    mlService.initialize();
+  }, []);
+
+  const currentWord = prompts[currentIndex];
+  const isLastWord = currentIndex === prompts.length - 1;
+  const progress = ((currentIndex) / prompts.length) * 100;
+
+  const handleSubmit = async ({ imageBlob, strokeData, strokeMetadata }) => {
+    // Calculate time for this word
+    const endTime = Date.now();
+    const duration = startTimeRef.current ? endTime - startTimeRef.current : 0;
+    setWordTimings((prev) => [...prev, { word: currentWord, durationMs: duration }]);
+
+    setIsAnalysing(true);
+
+    try {
+      // Capture canvas DataURL
+      const canvas = document.querySelector('canvas');
+      const imageBase64 = canvas ? canvas.toDataURL('image/png') : null;
+      const studentId = user?.uid || 'anonymous';
+
+      // Save handwriting sample to Firestore
+      const sampleDoc = await addDoc(collection(db, 'handwritingSamples'), {
+        studentId,
+        sessionId,
+        capturedAt: serverTimestamp(),
+        imageBase64,
+        promptLetter: currentWord,
+        strokeMetadata: {
+          ...strokeMetadata,
+          currentLetter: currentWord,
+          exerciseType: 'single_letter'
+        },
+        analysisStatus: 'pending',
+        analysisResult: {},
+      });
+
+      // API call with 2s timeout logic for feedback
+      const apiPromise = analyzeHandwriting({
+        sampleId: sampleDoc.id,
+        imageBase64,
+        studentId,
+        letter: currentWord.toLowerCase(),
+        strokeMetadata,
+      });
+
+      // We wait for the API but also have a fallback for the UI
+      let result = null;
+      try {
+        // Race the API against a 2.5s timeout for feedback purposes
+        result = await Promise.race([
+          apiPromise,
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2500))
+        ]);
+      } catch (e) {
+        console.log('API feedback timeout or error, showing pending...');
+      }
+
+      setIsAnalysing(false);
+      
+      const feedback = result ? {
+        risk_level: result.risk_level,
+        letter: currentWord,
+        note: result.letter_specific?.note || ""
+      } : {
+        risk_level: 'pending',
+        letter: currentWord,
+        note: "Analysis in progress..."
+      };
+
+      setLetterFeedback(feedback);
+      setLetterResults(prev => [...prev, feedback]);
+
+      // Wait 2 seconds for feedback display, then move on
+      setTimeout(() => {
+        setLetterFeedback(null);
+        if (isLastWord) {
+          finishSession(duration);
+        } else {
+          setCurrentIndex((prev) => prev + 1);
+          startTimeRef.current = null;
+        }
+      }, 2000);
+
+    } catch (error) {
+      console.error('Submission failed:', error.message);
+      setIsAnalysing(false);
+      // Fallback: move on anyway
+      if (isLastWord) finishSession(duration);
+      else setCurrentIndex(prev => prev + 1);
+    }
+  };
+
+  const finishSession = async (lastDuration) => {
+    try {
+      const totalDuration = wordTimings.reduce((sum, w) => sum + w.durationMs, 0) + lastDuration;
+      await addDoc(collection(db, 'sessions'), {
+        studentId: user?.uid || 'anonymous',
+        startedAt: serverTimestamp(),
+        endedAt: serverTimestamp(),
+        exerciseType: 'writing',
+        durationMs: totalDuration,
+        completionRate: 1.0,
+        errorCorrectionCount: 0,
+        pauseEvents: [],
+        deviceType: navigator.maxTouchPoints > 0 ? 'touch' : 'mouse',
+        timeOfDay: new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 17 ? 'afternoon' : 'evening',
+        letterCount: prompts.length,
+        exerciseMode: 'single_letter'
+      });
+    } catch (err) {
+      console.error('Session save failed:', err.message);
+    }
+    navigate('/student/complete', { state: { letterResults: [...letterResults] } });
+  };
+
+  // Start timer on first interaction with a new word
+  const handleCanvasInteraction = () => {
+    if (!startTimeRef.current && !isAnalysing && !letterFeedback) {
+      startTimeRef.current = Date.now();
+    }
+  };
+
+  const exerciseContent = (
+    <div className="w-full relative" onPointerDown={handleCanvasInteraction}>
+      {/* Analysing Spinner Overlay */}
+      {isAnalysing && (
+        <div className="absolute inset-0 z-40 bg-background/60 backdrop-blur-sm flex items-center justify-center rounded-2xl animate-fade-in">
+          <div className="text-center">
+            <div className="w-12 h-12 border-4 border-primary/30 border-t-primary rounded-full animate-spin mx-auto mb-4" />
+            <p className="font-bold text-primary animate-pulse text-lg">Analysing...</p>
+          </div>
+        </div>
+      )}
+
+      {/* Feedback Overlay */}
+      {letterFeedback && (
+        <div className="absolute inset-0 z-40 bg-background/80 backdrop-blur-md flex items-center justify-center rounded-2xl animate-scale-in">
+          <div className={`p-8 rounded-3xl border-4 text-center max-w-xs w-full shadow-2xl ${
+            letterFeedback.risk_level === 'low' ? 'bg-success/10 border-success text-success' :
+            letterFeedback.risk_level === 'medium' ? 'bg-warning/10 border-warning text-warning' :
+            letterFeedback.risk_level === 'high' ? 'bg-destructive/10 border-destructive text-destructive' :
+            'bg-muted border-muted text-muted-foreground'
+          }`}>
+            <span className="text-6xl mb-4 block animate-bounce">
+              {letterFeedback.risk_level === 'low' ? '🌟' : 
+               letterFeedback.risk_level === 'medium' ? '👍' : 
+               letterFeedback.risk_level === 'high' ? '💪' : '⏳'}
+            </span>
+            <h3 className="text-2xl font-black mb-2">
+              {letterFeedback.risk_level === 'low' ? `Great ${letterFeedback.letter}!` :
+               letterFeedback.risk_level === 'medium' ? 'Good try!' :
+               letterFeedback.risk_level === 'high' ? `Practice ${letterFeedback.letter} again` : 
+               'Working...'}
+            </h3>
+            <p className="text-sm font-medium opacity-90">
+              {letterFeedback.risk_level === 'low' ? 'Clean formation.' :
+               letterFeedback.risk_level === 'medium' ? `Watch your ${letterFeedback.letter} shape.` :
+               letterFeedback.note || "Analysis in progress..."
+              }
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Prompt */}
+      <div className="text-center mb-10">
+        <div className="flex justify-center gap-2 mb-6">
+          {prompts.map((_, idx) => (
+            <div 
+              key={idx}
+              className={`w-3 h-3 rounded-full transition-all duration-300 ${
+                idx === currentIndex ? 'bg-primary scale-125' :
+                idx < currentIndex ? 'bg-primary/40' : 'bg-muted border border-border'
+              }`}
+            />
+          ))}
+        </div>
+
+        <p className="text-lg text-muted-foreground mb-4 font-medium italic">Trace this letter:</p>
+        <div className="flex flex-col items-center justify-center gap-6">
+          <span 
+            className="font-bold text-foreground leading-none select-none"
+            style={{ 
+              fontSize: '160px', 
+              fontFamily: '"OpenDyslexic", "Inter", sans-serif',
+              textShadow: '2px 2px 0px rgba(0,0,0,0.05)'
+            }}
+          >
+            {currentWord}
+          </span>
+          <TextToSpeech text={currentWord} />
+        </div>
+      </div>
+
+      {/* Canvas */}
+      <WritingCanvas
+        key={currentIndex}
+        prompt={currentWord}
+        onSubmit={handleSubmit}
+        disabled={isAnalysing || !!letterFeedback}
+      />
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen bg-background student-view">
+      {/* Header */}
+      <header className="bg-card border-b border-border px-6 py-4">
+        <div className="max-w-4xl mx-auto flex items-center justify-between">
+          <button
+            onClick={() => navigate('/student')}
+            className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <ArrowLeft className="w-5 h-5" />
+            Back
+          </button>
+          <div className="flex items-center gap-2">
+            <BookOpen className="w-5 h-5 text-primary" />
+            <span className="font-semibold text-foreground">Letter Tracing</span>
+          </div>
+          <div className="text-sm text-muted-foreground font-medium bg-muted px-3 py-1 rounded-full">
+            Letter {currentIndex + 1} of {prompts.length}
+          </div>
+        </div>
+      </header>
+
+      {/* Progress bar */}
+      <div className="w-full h-2 bg-muted">
+        <div
+          className="h-full gradient-primary transition-all duration-500 ease-out rounded-r-full"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+
+      {/* Main */}
+      <main className="max-w-3xl mx-auto px-6 py-10">
+        <FocusMode>
+          {exerciseContent}
+        </FocusMode>
+      </main>
+    </div>
+  );
+}
+
+=== src/pages/guardian/GuardianDashboard.jsx ===
+import { useState, useEffect, useRef } from 'react';
+import { signOut } from 'firebase/auth';
+import { auth, db } from '@/services/firebase';
+import { collection, query, where, getDocs, doc as firestoreDoc, getDoc } from 'firebase/firestore';
+import useCurrentUser from '@/hooks/useCurrentUser';
+import OverviewTab from './OverviewTab';
+import HandwritingTab from './HandwritingTab';
+import ReportTab from './ReportTab';
+import BehaviourTab from './BehaviourTab';
+import StudentListPanel from '@/components/StudentListPanel';
+import {
+  BookOpen, LogOut, LayoutDashboard, PenTool, FileText, Activity,
+  ChevronDown, Users, UserPlus, Check,
+} from 'lucide-react';
+
+const TABS = [
+  { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+  { id: 'handwriting', label: 'Handwriting', icon: PenTool },
+  { id: 'reports', label: 'Reports', icon: FileText },
+  { id: 'behaviour', label: 'Behaviour', icon: Activity },
+];
+
+export default function GuardianDashboard() {
+  const { user, studentIds } = useCurrentUser();
+  const [activeTab, setActiveTab] = useState('overview');
+  const [students, setStudents] = useState([]);
+  const [selectedStudentId, setSelectedStudentId] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [showStudentDropdown, setShowStudentDropdown] = useState(false);
+  const [showBrowsePanel, setShowBrowsePanel] = useState(false);
+  const dropdownRef = useRef(null);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setShowStudentDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Fetch linked students
+  useEffect(() => {
+    if (!studentIds?.length) {
+      setLoading(false);
+      return;
+    }
+
+    const fetchStudents = async () => {
+      try {
+        const studentsData = [];
+        for (const sid of studentIds) {
+          // studentIds contains doc IDs from /students collection
+          const studentDocRef = firestoreDoc(db, 'students', sid);
+          const studentSnap = await getDoc(studentDocRef);
+          if (studentSnap.exists()) {
+            const data = { id: studentSnap.id, ...studentSnap.data() };
+
+            // Enrich with email from /users collection
+            if (data.uid) {
+              try {
+                const userSnap = await getDoc(firestoreDoc(db, 'users', data.uid));
+                if (userSnap.exists()) {
+                  const userData = userSnap.data();
+                  data.email = userData.email || '';
+                  data.displayName = data.displayName || userData.displayName || 'Student';
+                }
+              } catch (_) {}
+            }
+
+            studentsData.push(data);
+          }
+        }
+
+        if (studentsData.length === 0) {
+          setStudents(studentIds.map((sid) => ({ id: sid, uid: sid, displayName: 'Student' })));
+        } else {
+          setStudents(studentsData);
+        }
+
+        setSelectedStudentId(studentsData[0]?.uid || studentIds[0]);
+      } catch (err) {
+        console.error('Error loading students:', err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchStudents();
+  }, [studentIds]);
+
+  const selectedStudent = students.find((s) => s.uid === selectedStudentId || s.id === selectedStudentId);
+
+  return (
+    <div className="min-h-screen bg-background">
+      {/* Header */}
+      <header className="bg-card border-b border-border px-6 py-4 sticky top-0 z-30">
+        <div className="max-w-6xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl gradient-primary flex items-center justify-center">
+              <BookOpen className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <span className="font-bold text-lg text-foreground">NeuroLearn</span>
+              <span className="text-sm text-muted-foreground ml-2">Guardian</span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {/* Student Button with Dropdown */}
+            <div className="relative" ref={dropdownRef}>
+              <button
+                onClick={() => setShowStudentDropdown(!showStudentDropdown)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium transition-all ${
+                  showStudentDropdown
+                    ? 'border-primary bg-primary/10 text-primary shadow-sm'
+                    : 'border-input bg-background text-foreground hover:border-primary/40 hover:bg-primary/5'
+                }`}
+              >
+                <Users className="w-4 h-4" />
+                <span>Student</span>
+                {students.length > 0 && (
+                  <span className="ml-0.5 w-5 h-5 rounded-full bg-primary/15 text-primary text-xs font-bold flex items-center justify-center">
+                    {students.length}
+                  </span>
+                )}
+                <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${showStudentDropdown ? 'rotate-180' : ''}`} />
+              </button>
+
+              {/* Dropdown Panel */}
+              {showStudentDropdown && (
+                <div className="absolute right-0 top-full mt-2 w-72 bg-card rounded-xl border border-border shadow-xl overflow-hidden animate-scale-in z-50">
+                  {students.length === 0 ? (
+                    <div className="p-4 text-center">
+                      <Users className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+                      <p className="text-sm text-muted-foreground mb-3">No students connected yet.</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="px-3 pt-3 pb-1.5">
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1">
+                          Connected Students
+                        </p>
+                      </div>
+                      <div className="max-h-52 overflow-y-auto">
+                        {students.map((s) => {
+                          const isSelected = (s.uid || s.id) === selectedStudentId;
+                          const initial = (s.displayName || '?')[0].toUpperCase();
+                          return (
+                            <button
+                              key={s.id}
+                              onClick={() => {
+                                setSelectedStudentId(s.uid || s.id);
+                                setShowStudentDropdown(false);
+                              }}
+                              className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-all hover:bg-muted/60 ${
+                                isSelected ? 'bg-primary/8' : ''
+                              }`}
+                            >
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
+                                isSelected ? 'bg-primary/20 text-primary' : 'bg-muted text-muted-foreground'
+                              }`}>
+                                {initial}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className={`text-sm font-medium truncate ${
+                                  isSelected ? 'text-primary' : 'text-foreground'
+                                }`}>
+                                  {s.displayName || 'Student'}
+                                </p>
+                                {s.email && (
+                                  <p className="text-xs text-muted-foreground truncate">{s.email}</p>
+                                )}
+                              </div>
+                              {isSelected && (
+                                <Check className="w-4 h-4 text-primary flex-shrink-0" />
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+
+                  {/* Browse All Students action */}
+                  <div className="border-t border-border p-2">
+                    <button
+                      onClick={() => {
+                        setShowStudentDropdown(false);
+                        setShowBrowsePanel(true);
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium text-primary hover:bg-primary/10 transition-all"
+                    >
+                      <UserPlus className="w-4 h-4" />
+                      Browse All Students
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <span className="text-sm text-muted-foreground hidden sm:block">
+              {user?.displayName || user?.email}
+            </span>
+
+            <button
+              onClick={() => signOut(auth)}
+              className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-all"
+              aria-label="Sign out"
+            >
+              <LogOut className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* Tab Navigation */}
+      <div className="bg-card border-b border-border">
+        <div className="max-w-6xl mx-auto px-6">
+          <nav className="flex gap-1" role="tablist">
+            {TABS.map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  role="tab"
+                  aria-selected={isActive}
+                  className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-all ${
+                    isActive
+                      ? 'border-primary text-primary'
+                      : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                  <span className="hidden sm:inline">{tab.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+        </div>
+      </div>
+
+      {/* Student Selector Strip — visible when multiple students are linked */}
+      {students.length > 1 && selectedStudentId && (
+        <div className="bg-muted/30 border-b border-border">
+          <div className="max-w-6xl mx-auto px-6 py-3">
+            <div className="flex items-center gap-3 overflow-x-auto">
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
+                Viewing:
+              </span>
+              {students.map((s) => {
+                const uid = s.uid || s.id;
+                const isSelected = uid === selectedStudentId;
+                const initial = (s.displayName || s.email || '?')[0].toUpperCase();
+                return (
+                  <button
+                    key={s.id}
+                    onClick={() => setSelectedStudentId(uid)}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
+                      isSelected
+                        ? 'bg-primary text-white shadow-sm'
+                        : 'bg-card border border-border text-foreground hover:border-primary/40 hover:bg-primary/5'
+                    }`}
+                  >
+                    <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
+                      isSelected ? 'bg-white/20 text-white' : 'bg-primary/10 text-primary'
+                    }`}>
+                      {initial}
+                    </span>
+                    {s.displayName || 'Student'}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Content */}
+      <main className="max-w-6xl mx-auto px-6 py-8">
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <span className="w-8 h-8 border-3 border-primary/30 border-t-primary rounded-full animate-spin" />
+          </div>
+        ) : !selectedStudentId ? (
+          <div className="text-center py-16">
+            <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mx-auto mb-4">
+              <BookOpen className="w-8 h-8 text-muted-foreground" />
+            </div>
+            <h2 className="text-xl font-semibold text-foreground mb-2">No students linked</h2>
+            <p className="text-muted-foreground mb-6">Browse available students and connect to view their progress.</p>
+            <button
+              onClick={() => setShowBrowsePanel(true)}
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl gradient-primary text-white font-medium hover:shadow-lg transition-all shadow-md group"
+            >
+              <UserPlus className="w-5 h-5 group-hover:scale-110 transition-transform" />
+              Browse Students
+            </button>
+          </div>
+        ) : (
+          <>
+            {activeTab === 'overview' && <OverviewTab key={selectedStudentId} studentId={selectedStudentId} />}
+            {activeTab === 'handwriting' && <HandwritingTab key={selectedStudentId} studentId={selectedStudentId} />}
+            {activeTab === 'reports' && (
+              <ReportTab
+                key={selectedStudentId}
+                studentId={selectedStudentId}
+                studentName={selectedStudent?.displayName || 'Student'}
+              />
+            )}
+            {activeTab === 'behaviour' && <BehaviourTab key={selectedStudentId} studentId={selectedStudentId} />}
+          </>
+        )}
+      </main>
+
+      {showBrowsePanel && (
+        <StudentListPanel
+          role="guardian"
+          linkedStudentIds={studentIds || []}
+          onClose={() => setShowBrowsePanel(false)}
+          onSuccess={() => window.location.reload()}
+        />
+      )}
+    </div>
+  );
+}
+
+=== public/manifest.webmanifest ===
+{
+  "name": "NeuroLearn",
+  "short_name": "NeuroLearn",
+  "description": "AI-powered adaptive learning for neurodivergent children",
+  "theme_color": "#4F46E5",
+  "background_color": "#FAFAF7",
+  "display": "standalone",
+  "orientation": "portrait",
+  "scope": "/",
+  "start_url": "/",
+  "categories": ["education", "health", "kids"],
+  "icons": [
+    {
+      "src": "/icons.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Writing Exercise",
+      "url": "/student/exercise",
+      "description": "Start a writing practice session"
+    },
+    {
+      "name": "Guardian Dashboard",
+      "url": "/guardian",
+      "description": "View your child's progress"
+    }
+  ]
+}
+
+=== public/sw.js ===
+// NeuroLearn Service Worker — Offline-first with network fallback
+const CACHE_NAME = 'neurolearn-v1';
+const STATIC_ASSETS = [
+  '/',
+  '/index.html',
+  '/manifest.webmanifest',
+];
+
+// Install: cache the app shell
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
+  );
+  self.skipWaiting();
+});
+
+// Activate: clean old caches
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((keys) =>
+      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
+    )
+  );
+  self.clients.claim();
+});
+
+// Fetch: network-first for API, cache-first for assets
+self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+
+  // Skip non-GET requests
+  if (event.request.method !== 'GET') return;
+
+  // Network-first for API calls
+  if (url.hostname === 'neurolearn-api.vercel.app') {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          const clone = response.clone();
+          caches.open('api-cache').then((cache) => cache.put(event.request, clone));
+          return response;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
+  // Cache-first for Firebase Storage
+  if (url.hostname === 'firebasestorage.googleapis.com') {
+    event.respondWith(
+      caches.match(event.request).then((cached) => cached || fetch(event.request).then((response) => {
+        const clone = response.clone();
+        caches.open('storage-cache').then((cache) => cache.put(event.request, clone));
+        return response;
+      }))
+    );
+    return;
+  }
+
+  // Stale-while-revalidate for Google Fonts
+  if (url.hostname.includes('fonts.googleapis.com') || url.hostname.includes('fonts.gstatic.com')) {
+    event.respondWith(
+      caches.open('fonts-cache').then((cache) =>
+        cache.match(event.request).then((cached) => {
+          const fetched = fetch(event.request).then((response) => {
+            cache.put(event.request, response.clone());
+            return response;
+          });
+          return cached || fetched;
+        })
+      )
+    );
+    return;
+  }
+
+  // Cache-first for all other assets (JS, CSS, images)
+  event.respondWith(
+    caches.match(event.request).then((cached) => {
+      if (cached) return cached;
+      return fetch(event.request).then((response) => {
+        // Only cache successful, same-origin responses
+        if (response.status === 200 && (url.origin === self.location.origin)) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        }
+        return response;
+      }).catch(() => {
+        // Fallback to index.html for navigation requests (SPA)
+        if (event.request.mode === 'navigate') {
+          return caches.match('/index.html');
+        }
+      });
+    })
+  );
+});
+
+
+# Scan for hardcoded URLs, API keys, and localhost references
+neurolearn\src\hooks\useAnalysisResults.js:2: import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
+neurolearn\src\hooks\useAnalysisResults.js:3: import { db } from '@/services/firebase';
+neurolearn\src\hooks\useStudentData.js:2: import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
+neurolearn\src\hooks\useStudentData.js:3: import { db } from '@/services/firebase';
+neurolearn\src\services\api.js:2: import { auth } from './firebase';
+neurolearn\src\services\api.js:11: // Attach Firebase auth token to every request
+neurolearn\src\services\firebase.js:1: import { initializeApp } from 'firebase/app';
+neurolearn\src\services\firebase.js:2: import { getAuth, GoogleAuthProvider, browserLocalPersistence, setPersistence } from 'firebase/auth';
+neurolearn\src\services\firebase.js:3: import { getFirestore } from 'firebase/firestore';
+neurolearn\src\services\firebase.js:4: import { getStorage } from 'firebase/storage';
+neurolearn\src\services\firebase.js:6: const firebaseConfig = {
+neurolearn\src\services\firebase.js:15: const app = initializeApp(firebaseConfig);
+neurolearn\src\store\authStore.js:2: import { auth, db } from '@/services/firebase';
+neurolearn\src\store\authStore.js:3: import { onAuthStateChanged } from 'firebase/auth';
+neurolearn\src\store\authStore.js:4: import { doc, getDoc } from 'firebase/firestore';
+neurolearn\src\store\authStore.js:23: onAuthStateChanged(auth, async (firebaseUser) => {
+neurolearn\src\store\authStore.js:24: if (firebaseUser) {
+neurolearn\src\store\authStore.js:26: const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+neurolearn\src\store\authStore.js:31: uid: firebaseUser.uid,
+neurolearn\src\store\authStore.js:32: email: firebaseUser.email,
+neurolearn\src\store\authStore.js:33: displayName: firebaseUser.displayName || userData.displayName,
+neurolearn\src\store\authStore.js:34: photoURL: firebaseUser.photoURL,
+neurolearn\src\store\authStore.js:44: uid: firebaseUser.uid,
+neurolearn\src\store\authStore.js:45: email: firebaseUser.email,
+neurolearn\src\store\authStore.js:46: displayName: firebaseUser.displayName,
+neurolearn\src\store\authStore.js:47: photoURL: firebaseUser.photoURL,
+neurolearn\src\components\LinkStudentModal.jsx:5: } from 'firebase/firestore';
+neurolearn\src\components\LinkStudentModal.jsx:6: import { db, auth } from '@/services/firebase';
+neurolearn\src\components\StudentListPanel.jsx:5: } from 'firebase/firestore';
+neurolearn\src\components\StudentListPanel.jsx:6: import { db, auth } from '@/services/firebase';
+neurolearn\src\components\StudentListPanel.jsx:71: const studentUid = student.uid || student.id; // doc id in /users IS the firebase auth UID
+neurolearn\src\components\handwriting\AnnotatedSampleModal.jsx:148: {analysisResult.geminiInterpretation && (
+neurolearn\src\components\handwriting\AnnotatedSampleModal.jsx:155: "{analysisResult.geminiInterpretation}"
+neurolearn\src\pages\auth\ConsentModal.jsx:48: <li>Data is stored securely in Firebase (Google Cloud)</li>
+neurolearn\src\pages\auth\Login.jsx:3: import { signInWithEmailAndPassword, signInWithPopup } from 'firebase/auth';
+neurolearn\src\pages\auth\Login.jsx:4: import { auth, googleProvider, db } from '@/services/firebase';
+neurolearn\src\pages\auth\Login.jsx:5: import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+neurolearn\src\pages\auth\Signup.jsx:6: } from 'firebase/auth';
+neurolearn\src\pages\auth\Signup.jsx:7: import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+neurolearn\src\pages\auth\Signup.jsx:8: import { auth, db } from '@/services/firebase';
+neurolearn\src\pages\guardian\GuardianDashboard.jsx:2: import { signOut } from 'firebase/auth';
+neurolearn\src\pages\guardian\GuardianDashboard.jsx:3: import { auth, db } from '@/services/firebase';
+neurolearn\src\pages\guardian\GuardianDashboard.jsx:4: import { collection, query, where, getDocs, doc as firestoreDoc, getDoc } from 'firebase/firestore';
+neurolearn\src\pages\guardian\HandwritingTab.jsx:2: import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
+neurolearn\src\pages\guardian\HandwritingTab.jsx:3: import { db } from '@/services/firebase';
+neurolearn\src\pages\guardian\ReportTab.jsx:2: import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
+neurolearn\src\pages\guardian\ReportTab.jsx:3: import { db } from '@/services/firebase';
+neurolearn\src\pages\student\StudentHome.jsx:4: import { signOut } from 'firebase/auth';
+neurolearn\src\pages\student\StudentHome.jsx:5: import { auth } from '@/services/firebase';
+neurolearn\src\pages\student\StudentHome.jsx:19: const testGemini = async () => {
+neurolearn\src\pages\student\StudentHome.jsx:22: // Safely proxy request to backend API to protect the Gemini Key
+neurolearn\src\pages\student\StudentHome.jsx:100: {lessonText ? lessonText : "Click below to generate a quick encouraging lesson from Gemini AI!"}
+neurolearn\src\pages\student\StudentHome.jsx:103: onClick={testGemini}
+neurolearn\src\pages\student\WritingExercise.jsx:3: import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+neurolearn\src\pages\student\WritingExercise.jsx:4: import { db } from '@/services/firebase';
+neurolearn\src\pages\teacher\AssignExercise.jsx:3: import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+neurolearn\src\pages\teacher\AssignExercise.jsx:4: import { db } from '@/services/firebase';
+neurolearn\src\pages\teacher\TeacherDashboard.jsx:2: import { signOut } from 'firebase/auth';
+neurolearn\src\pages\teacher\TeacherDashboard.jsx:3: import { auth, db } from '@/services/firebase';
+neurolearn\src\pages\teacher\TeacherDashboard.jsx:4: import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
+
+# Check all environment variable usages
+neurolearn\src\services\api.js:5: baseURL: import.meta.env.VITE_VERCEL_API_URL || 'http://localhost:3000',
+neurolearn\src\services\firebase.js:7: apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+neurolearn\src\services\firebase.js:8: authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+neurolearn\src\services\firebase.js:9: projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+neurolearn\src\services\firebase.js:10: storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+neurolearn\src\services\firebase.js:11: messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+neurolearn\src\services\firebase.js:12: appId: import.meta.env.VITE_FIREBASE_APP_ID,
+
+# Check for any console.log or debug statements left in
+neurolearn\src\hooks\useStudentData.js:32: console.error('API summary unavailable, falling back to Firestore:', apiError.message);
+neurolearn\src\services\api.js:20: console.error('Error getting auth token:', error.message);
+neurolearn\src\services\mlService.js:6: console.log('[NeuroLearn ML] Using server-side analysis only.');
+neurolearn\src\store\authStore.js:55: console.error('Signup error full details (authStore):', error.code, error.message, error);
+neurolearn\src\main.jsx:9: console.log('NeuroLearn SW registered:', reg.scope);
+neurolearn\src\main.jsx:25: console.error('SW registration failed:', err);
+neurolearn\src\components\LinkStudentModal.jsx:85: console.error('Linking error:', err);
+neurolearn\src\components\StudentListPanel.jsx:27: console.error('Error fetching students:', err.message);
+neurolearn\src\components\StudentListPanel.jsx:58: console.error('Error fetching linked UIDs:', err);
+neurolearn\src\components\StudentListPanel.jsx:128: console.error('Linking error:', err);
+neurolearn\src\components\canvas\WritingCanvas.jsx:132: console.error('Submit failed:', error.message);
+neurolearn\src\pages\auth\Signup.jsx:106: console.error('Signup error full details:', err.code, err.message, err);
+neurolearn\src\pages\guardian\GuardianDashboard.jsx:85: console.error('Error loading students:', err.message);
+neurolearn\src\pages\guardian\HandwritingTab.jsx:31: console.error('Error loading samples:', err.message);
+neurolearn\src\pages\guardian\HandwritingTab.jsx:57: console.error('Error loading analysis:', err.message);
+neurolearn\src\pages\guardian\ReportTab.jsx:32: console.error('Error loading reports:', err.message);
+neurolearn\src\pages\student\WritingExercise.jsx:93: console.log('API feedback timeout or error, showing pending...');
+neurolearn\src\pages\student\WritingExercise.jsx:123: console.error('Submission failed:', error.message);
+neurolearn\src\pages\student\WritingExercise.jsx:149: console.error('Session save failed:', err.message);
+neurolearn\src\pages\teacher\AssignExercise.jsx:36: console.error('Failed to assign exercise:', err.message);
+neurolearn\src\pages\teacher\TeacherDashboard.jsx:82: console.error('Error loading class:', err.message);
+
+============================
+SECTION 4 — API LAYER
+============================
+# List all API endpoints
+neurolearn-api\api\analyze-handwriting.js
+neurolearn-api\api\generate-lesson.js
+neurolearn-api\api\generate-report.js
+neurolearn-api\api\student-summary\[studentId].js
+neurolearn-api\api\user\[uid].js
+neurolearn-api\api\webhook\ml-result.js
+===FILE: neurolearn-api\api\analyze-handwriting.js===
+import { setCors } from '../lib/cors.js';
+import { adminDb } from '../lib/firebaseAdmin.js';
+import { verifyToken, auditLog } from '../lib/auth.js';
+
+export default async function handler(req, res) {
+  setCors(req, res);
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  try {
+    // Verify auth
+    const decoded = await verifyToken(req);
+    if (!decoded) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { sampleId, imageBase64, studentId, strokeMetadata } = req.body;
+
+    if (!sampleId || !imageBase64 || !studentId) {
+      return res.status(400).json({ error: 'Missing required fields: sampleId, imageBase64, studentId' });
+    }
+
+    // Update sample status to processing and store imageBase64
+    await adminDb.collection('handwritingSamples').doc(sampleId).update({
+      analysisStatus: 'processing',
+      imageBase64
+    });
+
+    // Enqueue analysis task
+    const mlServiceUrl = process.env.ML_SERVICE_URL;
+    if (mlServiceUrl) {
+      try {
+        const response = await fetch(`${mlServiceUrl}/analyze`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            image_base64: imageBase64,
+            sample_id: sampleId,
+            stroke_metadata: strokeMetadata || {},
+          }),
+        });
+
+        if (!response.ok) {
+          console.error('ML service returned error:', response.status);
+        }
+      } catch (mlError) {
+        // ML service may be sleeping on free tier — mark as pending retry
+        console.error('ML service unavailable:', mlError.message);
+        await adminDb.collection('handwritingSamples').doc(sampleId).update({
+          analysisStatus: 'pending',
+        });
+      }
+    }
+
+    // Audit log (no PII)
+    await auditLog('analyze_handwriting', {
+      requestedBy: decoded.uid,
+      studentId,
+      metadata: { sampleId },
+    });
+
+    return res.status(200).json({ queued: true, sampleId });
+  } catch (error) {
+    console.error('analyze-handwriting error:', error.message);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+===FILE: neurolearn-api\api\generate-lesson.js===
+import { setCors } from '../lib/cors.js';
+import { verifyToken, getUserRole } from '../lib/auth.js';
+import { generateLesson } from '../lib/genAI.js';
+
+export default async function handler(req, res) {
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Origin', 'https://neurolearn-tutor-app.web.app');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-ML-Secret');
+    return res.status(200).end();
+  }
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  try {
+    const decoded = await verifyToken(req);
+    if (!decoded) return res.status(401).json({ error: 'Unauthorized' });
+
+    const role = await getUserRole(decoded.uid);
+    if (role !== 'student') return res.status(403).json({ error: 'Students only' });
+
+    const { topic, difficulty, childName } = req.body;
+    
+    const fullText = await generateLesson(topic || 'reading', difficulty || 'easy', childName || 'Student');
+    
+    // Parse words from [WORDS: ...] format
+    const wordsMatch = fullText.match(/\[WORDS:\s*([^\]]+)\]/i);
+    const words = wordsMatch 
+      ? wordsMatch[1].split(',').map(w => w.trim()).filter(w => w.length > 0)
+      : [];
+    
+    // Remove the words marker from the lesson text
+    const lesson = fullText.replace(/\[WORDS:\s*[^\]]+\]/i, '').trim();
+
+    return res.status(200).json({ lesson, words });
+  } catch (error) {
+    console.error('generate-lesson error:', error.message);
+    return res.status(500).json({ error: 'Internal server error', details: error.message });
+  }
+}
+
+===FILE: neurolearn-api\api\generate-report.js===
+import { setCors } from '../lib/cors.js';
+import { adminDb } from '../lib/firebaseAdmin.js';
+import { verifyToken, getUserRole, auditLog } from '../lib/auth.js';
+import { generateWeeklyReport } from '../lib/genAI.js';
+
+export default async function handler(req, res) {
+  setCors(req, res);
+  if (req.method === 'OPTIONS') return res.status(200).end();
+
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  try {
+    const decoded = await verifyToken(req);
+    if (!decoded) return res.status(401).json({ error: 'Unauthorized' });
+
+    const role = await getUserRole(decoded.uid);
+    if (role !== 'guardian') return res.status(403).json({ error: 'Guardian only' });
+
+    const { studentId, weekStartDate } = req.body;
+    if (!studentId) return res.status(400).json({ error: 'Missing studentId' });
+
+    // Fetch student info
+    const studentSnap = await adminDb.collection('students')
+      .where('uid', '==', studentId).get();
+    const studentName = studentSnap.docs[0]?.data()?.displayName || 'your child';
+
+    // Fetch last 7 days of analysis results
+    const weekStart = weekStartDate ? new Date(weekStartDate) : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const analysisSnap = await adminDb.collection('analysisResults')
+      .where('studentId', '==', studentId)
+      .where('analyzedAt', '>=', weekStart)
+      .orderBy('analyzedAt', 'desc')
+      .get();
+    const analysisResults = analysisSnap.docs.map(d => d.data());
+
+    // Fetch sessions
+    const sessionsSnap = await adminDb.collection('sessions')
+      .where('studentId', '==', studentId)
+      .where('startedAt', '>=', weekStart)
+      .orderBy('startedAt', 'desc')
+      .get();
+    const sessions = sessionsSnap.docs.map(d => d.data());
+
+    // Fetch behaviour snapshot
+    const behavSnap = await adminDb.collection('behaviourSnapshots')
+      .where('studentId', '==', studentId)
+      .orderBy('weekStartDate', 'desc')
+      .limit(1)
+      .get();
+    const behaviour = behavSnap.docs[0]?.data() || {};
+
+    // Prepare data for Gemini
+    const avgScore = analysisResults.length > 0 
+      ? analysisResults.reduce((sum, r) => sum + (100 - (r.scores?.overallDyslexiaRisk || 0) * 100), 0) / analysisResults.length 
+      : 80; // default passing if no data
+      
+    const topIndicators = analysisResults
+      .flatMap(r => r.indicators?.reversals?.map(rev => `'${rev.char}' reversal`) || [])
+      .slice(0, 3);
+
+    const weekData = {
+      childName: studentName,
+      sessionsCompleted: sessions.length,
+      avgScore: Math.round(avgScore),
+      topIndicators: topIndicators.length > 0 ? topIndicators : null,
+    };
+
+    let narrative;
+    try {
+      narrative = await generateWeeklyReport(weekData);
+    } catch (aiError) {
+      console.error('Gemini API error:', aiError.message);
+      // Fallback narrative
+      narrative = `This week, ${studentName} participated in writing exercises and showed continued engagement with the platform. We're collecting more data to provide detailed insights.\n\nAs your child continues to practice, we'll be able to identify specific areas for improvement and track progress more accurately.\n\nHere are some activities to try at home: 1) Practice tracing letters with a finger in sand, 2) Read together for 10 minutes using a ruler to track lines, 3) Play letter-matching games with flashcards.`;
+    }
+
+    // Extract recommended activities from the narrative (simple heuristic)
+    const activities = narrative
+      .split(/\d+[\.\)]\s+/)
+      .slice(1)
+      .map(a => a.trim())
+      .filter(a => a.length > 10)
+      .slice(0, 3);
+
+    // Save report to Firestore
+    const reportRef = await adminDb.collection('reports').add({
+      studentId,
+      guardianId: decoded.uid,
+      generatedAt: new Date(),
+      weekStartDate: weekStart.toISOString().split('T')[0],
+      narrativeSummary: narrative,
+      handwritingHighlights: analysisResults.length > 0
+        ? `${analysisResults.length} samples analyzed this week.`
+        : 'No new samples this week.',
+      recommendedActivities: activities,
+      pdfUrl: '',
+    });
+
+    await auditLog('generate_report', {
+      requestedBy: decoded.uid,
+      studentId,
+      metadata: { reportId: reportRef.id },
+    });
+
+    return res.status(200).json({
+      reportId: reportRef.id,
+      narrative,
+      weekStartDate: weekStart.toISOString().split('T')[0],
+      narrativeSummary: narrative,
+      handwritingHighlights: `${analysisResults.length} samples analyzed.`,
+      recommendedActivities: activities,
+    });
+  } catch (error) {
+    console.error('generate-report error:', error.message);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+===FILE: neurolearn-api\api\student-summary\[studentId].js===
+import { setCors } from '../../lib/cors.js';
+import { adminDb } from '../../lib/firebaseAdmin.js';
+import { verifyToken, getUserRole } from '../../lib/auth.js';
+
+export default async function handler(req, res) {
+  setCors(req, res);
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  
+  if (req.method !== 'GET') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  try {
+    const decoded = await verifyToken(req);
+    if (!decoded) return res.status(401).json({ error: 'Unauthorized' });
+
+    const role = await getUserRole(decoded.uid);
+    if (!['guardian', 'teacher'].includes(role)) {
+      return res.status(403).json({ error: 'Guardian or Teacher only' });
+    }
+
+    const { studentId } = req.query;
+    if (!studentId) return res.status(400).json({ error: 'Missing studentId' });
+
+    // If guardian, verify they have access to this student
+    if (role === 'guardian') {
+      const userDoc = await adminDb.collection('users').doc(decoded.uid).get();
+      const linkedIds = userDoc.data()?.linkedStudentIds || [];
+      if (!linkedIds.includes(studentId)) {
+        return res.status(403).json({ error: 'Not authorized for this student' });
+      }
+    }
+
+    // Fetch behaviour snapshots (last 4 weeks)
+    const behavSnap = await adminDb.collection('behaviourSnapshots')
+      .where('studentId', '==', studentId)
+      .orderBy('weekStartDate', 'desc')
+      .limit(4)
+      .get();
+    const behaviourSnapshots = behavSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    // Fetch analysis results (last 10)
+    const analysisSnap = await adminDb.collection('analysisResults')
+      .where('studentId', '==', studentId)
+      .orderBy('analyzedAt', 'desc')
+      .limit(10)
+      .get();
+    const analysisResults = analysisSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    // Fetch recent sessions
+    const sessionSnap = await adminDb.collection('sessions')
+      .where('studentId', '==', studentId)
+      .orderBy('startedAt', 'desc')
+      .limit(20)
+      .get();
+    const sessions = sessionSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    // Aggregate stats for dashboard
+    const avgFormScore = analysisResults.length > 0
+      ? analysisResults.reduce((sum, r) => sum + (r.scores?.letterFormScore || 0), 0) / analysisResults.length
+      : 0;
+
+    const totalReversals = analysisResults.reduce((sum, r) => sum + (r.indicators?.reversals?.length || 0), 0);
+
+    // Group analysis results by date for trend chart
+    const trendGroups = analysisResults.reduce((acc, result) => {
+      const date = result.analyzedAt?.toDate ? result.analyzedAt.toDate() : new Date();
+      const dateKey = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      if (!acc[dateKey]) acc[dateKey] = { sum: 0, count: 0, timestamp: date.getTime() };
+      acc[dateKey].sum += (result.scores?.overallDyslexiaRisk || 0);
+      acc[dateKey].count += 1;
+      return acc;
+    }, {});
+
+    const trendData = Object.entries(trendGroups)
+      .map(([date, data]) => ({
+        week: date,
+        value: Math.round((data.sum / data.count) * 100),
+        timestamp: data.timestamp
+      }))
+      .sort((a, b) => a.timestamp - b.timestamp);
+
+    return res.status(200).json({
+      studentId,
+      behaviourSnapshots,
+      analysisResults,
+      sessions,
+      stats: {
+        consistencyScore: Math.round(avgFormScore),
+        totalReversals,
+        sessionsCompleted: sessions.length,
+        trendData,
+      }
+    });
+  } catch (error) {
+    console.error('student-summary error:', error.message);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+===FILE: neurolearn-api\api\user\[uid].js===
+import { setCors } from '../../lib/cors.js';
+import { adminDb, adminAuth, adminStorage } from '../../lib/firebaseAdmin.js';
+import { verifyToken, getUserRole, auditLog } from '../../lib/auth.js';
+
+export default async function handler(req, res) {
+  setCors(res);
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'DELETE') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  try {
+    const decoded = await verifyToken(req);
+    if (!decoded) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { uid } = req.query;
+
+    // Only the user themselves or a guardian of the user can delete
+    if (decoded.uid !== uid) {
+      const role = await getUserRole(decoded.uid);
+      if (role !== 'guardian') {
+        return res.status(403).json({ error: 'Not authorized' });
+      }
+    }
+
+    // Audit log before deletion
+    await auditLog('delete_user_data', {
+      requestedBy: decoded.uid,
+      studentId: uid,
+      metadata: { action: 'full_deletion' },
+    });
+
+    // Delete all Firestore documents for this user/student
+    const collections = [
+      'sessions',
+      'handwritingSamples',
+      'analysisResults',
+      'behaviourSnapshots',
+      'reports',
+      'assignments',
+    ];
+
+    for (const col of collections) {
+      const snap = await adminDb.collection(col).where('studentId', '==', uid).get();
+      const batch = adminDb.batch();
+      snap.docs.forEach(doc => batch.delete(doc.ref));
+      if (snap.docs.length > 0) await batch.commit();
+    }
+
+    // Delete user document
+    const userDoc = adminDb.collection('users').doc(uid);
+    if ((await userDoc.get()).exists) {
+      await userDoc.delete();
+    }
+
+    // Delete student document
+    const studentSnap = await adminDb.collection('students').where('uid', '==', uid).get();
+    const studentBatch = adminDb.batch();
+    studentSnap.docs.forEach(doc => studentBatch.delete(doc.ref));
+    if (studentSnap.docs.length > 0) await studentBatch.commit();
+
+    // Delete Firebase Storage files
+    try {
+      const bucket = adminStorage.bucket();
+      const [files] = await bucket.getFiles({ prefix: `handwriting/${uid}/` });
+      await Promise.all(files.map(f => f.delete()));
+    } catch (storageError) {
+      console.error('Storage deletion error (non-fatal):', storageError.message);
+    }
+
+    // Delete Firebase Auth user
+    try {
+      await adminAuth.deleteUser(uid);
+    } catch (authError) {
+      console.error('Auth deletion error:', authError.message);
+    }
+
+    return res.status(200).json({ deleted: true, uid });
+  } catch (error) {
+    console.error('delete user error:', error.message);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+===FILE: neurolearn-api\api\webhook\ml-result.js===
+import { setCors } from '../../lib/cors.js';
+import { adminDb } from '../../lib/firebaseAdmin.js';
+import { verifyMLSecret } from '../../lib/auth.js';
+
+export default async function handler(req, res) {
+  setCors(res);
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  try {
+    // Verify shared secret
+    if (!verifyMLSecret(req)) {
+      return res.status(401).json({ error: 'Invalid ML secret' });
+    }
+
+    const { sampleId, scores, indicators, rawFeatures } = req.body;
+
+    if (!sampleId || !scores) {
+      return res.status(400).json({ error: 'Missing required fields: sampleId, scores' });
+    }
+
+    // Get the sample to find the studentId
+    const sampleDoc = await adminDb.collection('handwritingSamples').doc(sampleId).get();
+    if (!sampleDoc.exists) {
+      return res.status(404).json({ error: 'Sample not found' });
+    }
+    const studentId = sampleDoc.data().studentId;
+
+    // Write analysis result
+    const resultRef = await adminDb.collection('analysisResults').add({
+      sampleId,
+      studentId,
+      analyzedAt: new Date(),
+      scores: {
+        letterFormScore: scores.letter_form_score || 0,
+        spacingScore: scores.spacing_score || 0,
+        baselineScore: scores.baseline_score || 0,
+        reversalScore: scores.reversal_score || 0,
+        overallDyslexiaRisk: scores.overall_dyslexia_risk || 0,
+      },
+      indicators: {
+        reversals: indicators?.reversals || [],
+        omissions: indicators?.omissions || [],
+        substitutions: indicators?.substitutions || [],
+        sequencing: indicators?.sequencing_errors || [],
+      },
+      rawFeatures: rawFeatures || {},
+    });
+
+    // Update sample status
+    await adminDb.collection('handwritingSamples').doc(sampleId).update({
+      analysisStatus: 'complete',
+      analysisResult: {
+        resultId: resultRef.id,
+        overallRisk: scores.overall_dyslexia_risk || 0,
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      resultId: resultRef.id,
+    });
+  } catch (error) {
+    console.error('ml-result webhook error:', error.message);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+===FILE: neurolearn-api\lib\auth.js===
+import { adminAuth, adminDb } from './firebaseAdmin.js';
+
+/**
+ * Verify Firebase ID token from Authorization header.
+ * Returns the decoded token or null if invalid.
+ */
+export async function verifyToken(req) {
+  const authHeader = req.headers.authorization || req.headers.Authorization;
+  if (!authHeader?.startsWith('Bearer ')) return null;
+
+  const token = authHeader.split('Bearer ')[1];
+  try {
+    return await adminAuth.verifyIdToken(token);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get user role from Firestore.
+ */
+export async function getUserRole(uid) {
+  const userDoc = await adminDb.collection('users').doc(uid).get();
+  return userDoc.exists ? userDoc.data().role : null;
+}
+
+/**
+ * Verify the request is from the ML service (shared secret).
+ */
+export function verifyMLSecret(req) {
+  const secret = req.headers['x-ml-secret'];
+  return secret && secret === process.env.ML_WEBHOOK_SECRET;
+}
+
+/**
+ * Write an audit log entry.
+ */
+export async function auditLog(action, { requestedBy, studentId, metadata = {} }) {
+  await adminDb.collection('auditLog').add({
+    action,
+    requestedBy,
+    studentId,
+    metadata,
+    timestamp: new Date(),
+  });
+}
+
+===FILE: neurolearn-api\lib\cors.js===
+export function setCors(req, res) {
+  const allowed = [
+    'https://neurolearn-tutor-app.web.app',
+    'http://localhost:5173'
+  ];
+  
+  const origin = req.headers.origin;
+  if (allowed.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  } else if (!origin && process.env.NODE_ENV === 'development') {
+    // Allow server-to-server or local non-browser requests in dev
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
+
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-ML-Secret');
+}
+
+===FILE: neurolearn-api\lib\firebaseAdmin.js===
+import { initializeApp, cert, getApps } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
+import { getAuth } from 'firebase-admin/auth';
+import { getStorage } from 'firebase-admin/storage';
+
+function getApp() {
+  if (getApps().length) return getApps()[0];
+
+  const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT_JSON
+    ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON)
+    : undefined;
+
+  return initializeApp({
+    credential: serviceAccount ? cert(serviceAccount) : undefined,
+  });
+}
+
+const app = getApp();
+export const adminDb = getFirestore(app);
+export const adminAuth = getAuth(app);
+export const adminStorage = getStorage(app);
+export default app;
+
+===FILE: neurolearn-api\lib\genAI.js===
+import { GoogleGenerativeAI } from '@google/generative-ai';
+
+const API_KEY = process.env.VITE_GENAI_API_KEY || process.env.GENAI_API_KEY; // Accommodate Vercel/Node environment variables
+const genAI = new GoogleGenerativeAI(API_KEY);
+
+const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+
+/**
+ * Generate a personalized lesson for a neurodivergent child.
+ * @param {string} topic - The topic or word to teach
+ * @param {string} difficulty - 'easy' | 'medium' | 'hard'
+ * @param {string} childName - Child's first name for personalisation
+ */
+export async function generateLesson(topic, difficulty = 'easy', childName = 'there') {
+  const prompt = `You are a warm, encouraging teacher for children with dyslexia aged 6-12.
+Create a short, fun lesson about the word or topic: "${topic}".
+Difficulty level: ${difficulty}.
+Address the child as ${childName}.
+Rules:
+- Use simple, short sentences (max 10 words each)
+- Use lots of encouragement and positive language
+- Include one fun activity suggestion at the end
+- Never use the words "disability", "disorder", or "struggle"
+- Format: 3-4 sentences of explanation, then one activity.
+- At the very end, include a list of 5-8 related practice words in this format: [WORDS: word1, word2, word3]
+Keep the total response under 150 words.`;
+
+  const result = await model.generateContent(prompt);
+  return result.response.text();
+}
+
+/**
+ * Generate a weekly progress summary for a guardian.
+ * @param {object} weekData - { childName, sessionsCompleted, avgScore, topIndicators }
+ */
+export async function generateWeeklyReport(weekData) {
+  const { childName, sessionsCompleted, avgScore, topIndicators } = weekData;
+  const prompt = `You are a specialist educational psychologist writing a brief weekly
+progress note for a parent of a child with dyslexia.
+Child: ${childName}
+Sessions this week: ${sessionsCompleted}
+Average performance score: ${avgScore}/100
+Key observations: ${topIndicators?.join(', ') || 'General writing practice'}
+
+Write exactly 3 short paragraphs:
+1. What went well this week (encouraging, specific)
+2. One area to gently work on (never alarming, always hopeful)
+3. Two practical activities to try at home
+
+Rules: warm tone, plain language, no clinical jargon, under 150 words total,
+second person ("Your child...").`;
+
+  const result = await model.generateContent(prompt);
+  return result.response.text();
+}
+
+/**
+ * Analyse a handwriting description and return feedback.
+ * @param {object} features - extracted handwriting feature object
+ */
+export async function analyzeHandwritingWithAI(features) {
+  const prompt = `You are a specialist in children's handwriting and dyslexia.
+Given these handwriting metrics from a child's writing session:
+${JSON.stringify(features, null, 2)}
+
+Provide a brief, warm, actionable summary (under 80 words) for a parent explaining:
+- What the metrics suggest about the child's writing
+- One specific encouragement
+- One gentle tip to practice at home
+Never use clinical or alarming language.`;
+
+  const result = await model.generateContent(prompt);
+  return result.response.text();
+}
+
+/**
+ * Generate a short 2-sentence interpretation of a specific letter result for parents.
+ */
+export async function generateHandwritingInterpretation(data) {
+  const { letter, scores, letter_specific, studentName } = data;
+  
+  const prompt = `You are a specialist in children's handwriting 
+assessment. A child named ${studentName} just traced the letter 
+"${letter}". Here are the analysis scores (0-100, where 100 is excellent):
+- Letter form: ${scores.letterFormScore}
+- Spacing: ${scores.spacingScore}  
+- Baseline: ${scores.baselineScore}
+- Reversal risk: ${scores.reversalScore}
+- Overall risk (0-1 Scale): ${scores.overallRisk}
+${letter_specific ? `Letter-specific diagnostic: ${JSON.stringify(letter_specific)}` : ''}
+
+Write exactly 2 sentences for the child's parent:
+1. What this specific letter result shows about the child's writing (e.g., strong symmetry, needs more steady hand)
+2. One practical suggestion for improvement (e.g., trace in sand, use a guided line)
+
+Be warm, specific, and encouraging. Do not use clinical language.
+Do not start with "I" or repeat the child's name twice. Do not include markdown formatting or quotes.`;
+
+  try {
+    const result = await model.generateContent(prompt);
+    return result.response.text().trim();
+  } catch (error) {
+    console.error('Gemini interpretation error:', error.message);
+    return `Great effort on the letter ${letter}! Keep practicing to build muscle memory and improve formation.`;
+  }
+}
+
+
+# Check env var references in API
+neurolearn-api\api\analyze-handwriting.js:32: const mlServiceUrl = process.env.ML_SERVICE_URL;
+neurolearn-api\lib\auth.js:32: return secret && secret === process.env.ML_WEBHOOK_SECRET;
+neurolearn-api\lib\cors.js:10: } else if (!origin && process.env.NODE_ENV === 'development') {
+neurolearn-api\lib\firebaseAdmin.js:9: const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT_JSON
+neurolearn-api\lib\firebaseAdmin.js:10: ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON)
+neurolearn-api\lib\genAI.js:3: const API_KEY = process.env.VITE_GENAI_API_KEY || process.env.GENAI_API_KEY; // Accommodate Vercel/Node environment variables
+
+=== api/lib/cors.js ===
+export function setCors(req, res) {
+  const allowed = [
+    'https://neurolearn-tutor-app.web.app',
+    'http://localhost:5173'
+  ];
+  
+  const origin = req.headers.origin;
+  if (allowed.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  } else if (!origin && process.env.NODE_ENV === 'development') {
+    // Allow server-to-server or local non-browser requests in dev
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
+
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-ML-Secret');
+}
+
+
+============================
+SECTION 5 — ML SERVICE
+============================
+=== main.py ===
+"""
+NeuroLearn ML Service — FastAPI
+Loads trained RandomForest + scaler on startup.
+Accepts handwriting images and returns forensic analysis scores.
+"""
+
+import os
+import io
+import json
+import httpx
+import joblib
+import numpy as np
+import cv2
+from PIL import Image
+from pathlib import Path
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
+app = FastAPI(title="NeuroLearn ML Service", version="1.0.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ── Load models on startup ────────────────────────────────────────────────────
+MODELS_PATH = Path("models")
+rf_model = None
+scaler = None
+metadata = {}
+
+@app.on_event("startup")
+async def load_models():
+    global rf_model, scaler, metadata
+    try:
+        rf_model = joblib.load(MODELS_PATH / "dyslexia_classifier.pkl")
+        scaler = joblib.load(MODELS_PATH / "feature_scaler.pkl")
+        with open(MODELS_PATH / "model_metadata.json") as f:
+            metadata = json.load(f)
+        print(f"Models loaded — RF accuracy: {metadata.get('rf_accuracy', 'unknown')}")
+    except Exception as e:
+        print(f"Warning: Could not load models: {e}")
+        print("Service will run but analysis will return placeholder scores")
+
+# ── Request/Response models ───────────────────────────────────────────────────
+class AnalyzeRequest(BaseModel):
+    image_url: str
+    sample_id: str
+    stroke_metadata: dict = {}
+
+class AnalyzeResponse(BaseModel):
+    sample_id: str
+    scores: dict
+    indicators: dict
+    risk_level: str
+
+# ── Image preprocessing (same as training) ────────────────────────────────────
+def preprocess_image_from_bytes(img_bytes):
+    nparr = np.frombuffer(img_bytes, np.uint8)
+    img = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
+    if img is None:
+        return None
+    _, binary = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    coords = np.column_stack(np.where(binary > 0))
+    if len(coords) < 10:
+        return cv2.resize(binary, (32, 32))
+    angle = cv2.minAreaRect(coords)[-1]
+    angle = -(90 + angle) if angle < -45 else -angle
+    (h, w) = binary.shape
+    M = cv2.getRotationMatrix2D((w//2, h//2), angle, 1.0)
+    deskewed = cv2.warpAffine(binary, M, (w, h), flags=cv2.INTER_CUBIC,
+                               borderMode=cv2.BORDER_REPLICATE)
+    kernel = np.ones((2, 2), np.uint8)
+    denoised = cv2.morphologyEx(deskewed, cv2.MORPH_OPEN, kernel)
+    return cv2.resize(denoised, (32, 32))
+
+def extract_features(img):
+    """Same feature extraction as train.py."""
+    if img is None:
+        return None
+    features = []
+    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(img)
+    valid = [(i, stats[i]) for i in range(1, num_labels)
+             if 50 < stats[i][cv2.CC_STAT_AREA] < 2000]
+    if len(valid) < 2:
+        return [0.0] * 20
+
+    areas = [s[cv2.CC_STAT_AREA] for _, s in valid]
+    heights = [s[cv2.CC_STAT_HEIGHT] for _, s in valid]
+    widths = [s[cv2.CC_STAT_WIDTH] for _, s in valid]
+    x_pos = [s[cv2.CC_STAT_LEFT] for _, s in valid]
+    y_pos = [s[cv2.CC_STAT_TOP] for _, s in valid]
+
+    features.append(np.std(heights) / (np.mean(heights) + 1e-6))
+    features.append(np.std(widths) / (np.mean(widths) + 1e-6))
+    features.append(np.std(areas) / (np.mean(areas) + 1e-6))
+    bottom = [y + s[cv2.CC_STAT_HEIGHT] for _, s in valid]
+    features.append(np.std(bottom) / (32 + 1e-6))
+    gaps = np.diff(sorted(x_pos)) if len(x_pos) > 1 else [0]
+    features.append(np.std(gaps) / (np.mean(gaps) + 1e-6))
+    features.append(min(len(valid), 15))
+    features.append(len(valid) / 4.0)
+    aspects = [w / (h + 1e-6) for w, h in zip(widths, heights)]
+    features.append(np.mean(aspects))
+    features.append(np.std(aspects))
+    features.append(np.sum(img > 0) / (32 * 32))
+    features.append(np.var(np.sum(img, axis=1) / 255.0))
+    features.append(np.var(np.sum(img, axis=0) / 255.0))
+    dt = cv2.distanceTransform(img, cv2.DIST_L2, 5)
+    features.append(np.mean(dt[dt > 0]) if np.any(dt > 0) else 0)
+    features.append(np.std(dt[dt > 0]) if np.any(dt > 0) else 0)
+    flipped = cv2.flip(img, 1)
+    diff = cv2.absdiff(img, flipped)
+    features.append(1.0 - np.sum(diff > 0) / (32 * 32))
+    flipped_v = cv2.flip(img, 0)
+    diff_v = cv2.absdiff(img, flipped_v)
+    features.append(1.0 - np.sum(diff_v > 0) / (32 * 32))
+    corners = cv2.goodFeaturesToTrack(img, 50, 0.01, 5)
+    features.append(len(corners) if corners is not None else 0)
+    contours, _ = cv2.findContours(img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if contours:
+        lc = max(contours, key=cv2.contourArea)
+        p = cv2.arcLength(lc, True)
+        a = cv2.contourArea(lc)
+        features.append((p**2) / (4 * np.pi * a + 1e-6))
+    else:
+        features.append(0.0)
+    mid = 16
+    features.append(np.sum(img[:mid] > 0) / (np.sum(img[mid:] > 0) + 1e-6))
+    midw = 16
+    features.append(np.sum(img[:, :midw] > 0) / (np.sum(img[:, midw:] > 0) + 1e-6))
+    return features
+
+# ── Endpoints ─────────────────────────────────────────────────────────────────
+@app.get("/health")
+async def health():
+    return {
+        "status": "ok",
+        "model_loaded": rf_model is not None,
+        "model_version": metadata.get("model_version", "unknown"),
+        "rf_accuracy": metadata.get("rf_accuracy", "unknown")
+    }
+
+@app.post("/analyze", response_model=AnalyzeResponse)
+async def analyze(req: AnalyzeRequest):
+    try:
+        # Download image from Firebase Storage
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(req.image_url, timeout=30)
+            if resp.status_code != 200:
+                raise HTTPException(status_code=400, detail="Could not download image")
+            img_bytes = resp.content
+
+        # Preprocess
+        img = preprocess_image_from_bytes(img_bytes)
+        if img is None:
+            raise HTTPException(status_code=400, detail="Could not process image")
+
+        # Extract features
+        raw_features = extract_features(img)
+
+        if rf_model is not None and scaler is not None:
+            # Scale features
+            feat_array = np.array(raw_features).reshape(1, -1)
+            feat_scaled = scaler.transform(feat_array)
+
+            # Predict
+            proba = rf_model.predict_proba(feat_scaled)[0]
+            risk_proba = float(proba[1])  # probability of dyslexia indicator
+
+            # Incorporate stroke timing metadata
+            pause_ratio = req.stroke_metadata.get('pauseRatio', 0)
+            speed_variance = req.stroke_metadata.get('speedVariance', 0)
+            timing_risk = min(pause_ratio * 0.4 + speed_variance * 0.1, 0.3)
+            combined_risk = min(risk_proba * 0.7 + timing_risk, 1.0)
+        else:
+            # Fallback when model not loaded
+            combined_risk = 0.3
+            raw_features = [0.0] * 20
+
+        # Compute individual dimension scores (0–100)
+        f = raw_features
+        letter_form_score = max(0, 100 - (f[0] * 80 + f[1] * 20))
+        spacing_score = max(0, 100 - (f[4] * 100))
+        baseline_score = max(0, 100 - (f[3] * 150))
+        reversal_score = min(100, (f[14] * 40 + abs(f[19] - 1.0) * 60))
+
+        # Build indicators
+        indicators = {
+            "reversals": [{"confidence": float(f[14]), "type": "horizontal_symmetry"}]
+                         if f[14] > 0.7 else [],
+            "baselineDrift": float(f[3]) > 0.3,
+            "sizingInconsistency": float(f[0]) > 0.4,
+            "spacingIrregularity": float(f[4]) > 0.5,
+            "omissionRisk": float(f[6]) < 0.5,
+        }
+
+        risk_level = (
+            "high" if combined_risk > 0.65 else
+            "medium" if combined_risk > 0.35 else
+            "low"
+        )
+
+        # Callback to Vercel webhook
+        webhook_url = os.getenv("VERCEL_WEBHOOK_URL")
+        webhook_secret = os.getenv("ML_WEBHOOK_SECRET")
+        if webhook_url and webhook_secret:
+            payload = {
+                "sampleId": req.sample_id,
+                "scores": {
+                    "letterFormScore": round(letter_form_score, 1),
+                    "spacingScore": round(spacing_score, 1),
+                    "baselineScore": round(baseline_score, 1),
+                    "reversalScore": round(reversal_score, 1),
+                    "overallRisk": round(combined_risk, 3),
+                },
+                "indicators": indicators,
+                "rawFeatures": {f"f{i}": v for i, v in enumerate(raw_features)},
+            }
+            try:
+                async with httpx.AsyncClient() as client:
+                    await client.post(
+                        webhook_url,
+                        json=payload,
+                        headers={"X-ML-Secret": webhook_secret},
+                        timeout=10
+                    )
+            except Exception:
+                pass  # Don't fail the analysis if webhook fails
+
+        return AnalyzeResponse(
+            sample_id=req.sample_id,
+            scores={
+                "letterFormScore": round(letter_form_score, 1),
+                "spacingScore": round(spacing_score, 1),
+                "baselineScore": round(baseline_score, 1),
+                "reversalScore": round(reversal_score, 1),
+                "overallRisk": round(combined_risk, 3),
+            },
+            indicators=indicators,
+            risk_level=risk_level,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+=== requirements.txt ===
+typing_extensions==4.8.0
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+opencv-python-headless==4.8.1.78
+scikit-learn==1.3.2
+numpy==1.24.4
+Pillow==10.1.0
+joblib==1.3.2
+httpx==0.27.0
+python-multipart==0.0.9
+pydantic==2.7.0
+p y t h o n - d o t e n v 
+ 
+ 
+
+# List all files including models
+neurolearn-ml\.env
+neurolearn-ml\.gitignore
+neurolearn-ml\classifier.py
+neurolearn-ml\features.py
+neurolearn-ml\firebase_service_account.json
+neurolearn-ml\main.py
+neurolearn-ml\models
+neurolearn-ml\models\dyslexia_classifier.pkl
+neurolearn-ml\models\dyslexia_cnn.h5
+neurolearn-ml\models\dyslexia_cnn.tflite
+neurolearn-ml\models\dyslexia_cnn_best.h5
+neurolearn-ml\models\feature_importance.png
+neurolearn-ml\models\feature_scaler.pkl
+neurolearn-ml\models\model_metadata.json
+neurolearn-ml\models\README.md
+neurolearn-ml\models\training_history.png
+neurolearn-ml\preprocess.py
+neurolearn-ml\requirements.txt
+neurolearn-ml\segmentation.py
+neurolearn-ml\templates
+neurolearn-ml\templates\README.md
+neurolearn-ml\train.py
+neurolearn-ml\training_log.txt
+
+# Check if model files exist and their sizes
+neurolearn-ml\models\dyslexia_classifier.pkl : 19421257 bytes
+neurolearn-ml\models\feature_scaler.pkl : 1095 bytes
+neurolearn-ml\models\dyslexia_cnn.tflite : 130224 bytes
+neurolearn-ml\models\dyslexia_cnn.h5 : 1507224 bytes
+neurolearn-ml\models\dyslexia_cnn_best.h5 : 1507224 bytes
+
+# Check model metadata
+{
+  "model_version": "1.0.0",
+  "trained_on": "IAM Handwriting Word Database (Kaggle nibinv23)",
+  "training_date": "2026-03-26 23:06:58",
+  "samples_total": 9154,
+  "samples_normal": 5792,
+  "samples_indicator": 3362,
+  "rf_accuracy": 0.8602,
+  "rf_auc": 0.9371,
+  "rf_cv_auc_mean": 0.9389,
+  "rf_cv_auc_std": 0.0034,
+  "cnn_accuracy": 0.8525,
+  "cnn_auc": 0.9434,
+  "cnn_epochs": 47,
+  "feature_count": 20,
+  "feature_names": [
+    "height_variance",
+    "width_variance",
+    "area_variance",
+    "baseline_deviation",
+    "spacing_irregularity",
+    "component_count",
+    "component_ratio",
+    "aspect_ratio_mean",
+    "aspect_ratio_std",
+    "ink_density",
+    "h_proj_variance",
+    "v_proj_variance",
+    "stroke_width_mean",
+    "stroke_width_std",
+    "horizontal_symmetry",
+    "vertical_symmetry",
+    "corner_count",
+    "contour_complexity",
+    "ascender_ratio",
+    "lr_ratio"
+  ],
+  "img_size": [
+    32,
+    32
+  ],
+  "classes": [
+    "normal",
+    "dyslexia_indicator"
+  ],
+  "machine": "Ryzen 5, 16GB RAM, CPU-only"
+}
+
+# Check Firebase service account
+Keys present: ['type', 'project_id', 'private_key_id', 'private_key', 'client_email', 'client_id', 'auth_uri', 'token_uri', 'auth_provider_x509_cert_url', 'client_x509_cert_url', 'universe_domain']
+
+# Check if FastAPI starts
+D:\My projects\NeuroLearn\neurolearn-ml\main.py:35: DeprecationWarning: 
+        on_event is deprecated, use lifespan event handlers instead.
+
+        Read more about it in the
+        [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+        
+  @app.on_event("startup")
+
+{"status":"ok","model_loaded":true,"model_version":"1.0.0","rf_accuracy":0.8602}
+
+============================
+SECTION 6 — ENVIRONMENT VARIABLES
+============================
+
+=== neurolearn\.env ===
+VITE_FIREBASE_API_KEY=<PRESENT>
+VITE_FIREBASE_AUTH_DOMAIN=<PRESENT>
+VITE_FIREBASE_PROJECT_ID=<PRESENT>
+VITE_FIREBASE_STORAGE_BUCKET=<PRESENT>
+VITE_FIREBASE_MESSAGING_SENDER_ID=<PRESENT>
+VITE_FIREBASE_APP_ID=<PRESENT>
+VITE_GENAI_API_KEY=<PRESENT>
+VITE_GENAI_PROVIDER=<PRESENT>
+
+=== neurolearn\.env.local ===
+VITE_FIREBASE_API_KEY=<PRESENT>
+VITE_FIREBASE_APP_ID=<PRESENT>
+VITE_FIREBASE_AUTH_DOMAIN=<PRESENT>
+VITE_FIREBASE_MESSAGING_SENDER_ID=<PRESENT>
+VITE_FIREBASE_PROJECT_ID=<PRESENT>
+VITE_FIREBASE_STORAGE_BUCKET=<PRESENT>
+VITE_GENAI_API_KEY=<PRESENT>
+VITE_GENAI_PROVIDER=<PRESENT>
+VITE_VERCEL_API_URL=<PRESENT>
+
+=== neurolearn\.env.production ===
+neurolearn\.env.production NOT FOUND
+
+=== neurolearn\.env.development ===
+neurolearn\.env.development NOT FOUND
+
+=== neurolearn-api\.env ===
+neurolearn-api\.env NOT FOUND
+
+=== neurolearn-api\.env.local ===
+FIREBASE_SERVICE_ACCOUNT_JSON=<PRESENT>
+VERCEL_OIDC_TOKEN=<PRESENT>
+VITE_FIREBASE_API_KEY=<PRESENT>
+VITE_FIREBASE_APP_ID=<PRESENT>
+VITE_FIREBASE_AUTH_DOMAIN=<PRESENT>
+VITE_FIREBASE_MESSAGING_SENDER_ID=<PRESENT>
+VITE_FIREBASE_PROJECT_ID=<PRESENT>
+VITE_FIREBASE_STORAGE_BUCKET=<PRESENT>
+VITE_GENAI_API_KEY=<PRESENT>
+VITE_GENAI_PROVIDER=<PRESENT>
+VITE_VERCEL_API_URL=<PRESENT>
+ML_WEBHOOK_SECRET=<PRESENT>
+
+=== neurolearn-api\.env.production ===
+neurolearn-api\.env.production NOT FOUND
+
+=== neurolearn-ml\.env ===
+VERCEL_WEBHOOK_URL=<PRESENT>
+ML_WEBHOOK_SECRET=<PRESENT>
+
+=== neurolearn-ml\.env.local ===
+neurolearn-ml\.env.local NOT FOUND
+
+============================
+SECTION 7 — BUILD & LINT
+============================
+# Frontend build check
+
+> neurolearn@0.0.0 build
+> vite build
+
+[36mvite v8.0.1 [32mbuilding client environment for production...[36m[39m
+[2K
+transforming...✓ 2907 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                             1.39 kB │ gzip:   0.62 kB
+dist/assets/index-vvVt_CZl.css             38.73 kB │ gzip:   7.66 kB
+dist/assets/rolldown-runtime-Dw2cE7zH.js    0.68 kB │ gzip:   0.41 kB
+dist/assets/purify.es-WSdMsXOl.js          21.03 kB │ gzip:   8.47 kB
+dist/assets/index.es-CrWIvlYF.js          151.41 kB │ gzip:  48.89 kB
+dist/assets/firebase-DnSWGaMn.js          360.23 kB │ gzip: 109.67 kB
+dist/assets/charts-74ixohNe.js            393.07 kB │ gzip: 113.43 kB
+dist/assets/index-DBdawtrh.js             428.67 kB │ gzip: 133.27 kB
+dist/assets/pdf-iLwj1QNg.js               600.47 kB │ gzip: 176.57 kB
+
+[32m✓ built in 1.29s[39m
+[33m[plugin builtin:vite-reporter] 
+(!) Some chunks are larger than 600 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.[39m
+# Lint check
+`Date.now` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+
+  45 |   const handleSubmit = async ({ imageBlob, strokeData, strokeMetadata }) => {
+  46 |     // Calculate time for this word
+> 47 |     const endTime = Date.now();
+     |                     ^^^^^^^^^^ Cannot call impure function
+  48 |     const duration = startTimeRef.current ? endTime - startTimeRef.current : 0;
+  49 |     setWordTimings((prev) => [...prev, { word: currentWord, durationMs: duration }]);
+  50 |  react-hooks/purity
+  92:16  error  'e' is defined but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       no-unused-vars
+
+D:\My projects\NeuroLearn\neurolearn\src\pages\teacher\TeacherDashboard.jsx
+   4:45  error  'orderBy' is defined but never used. Allowed unused vars must match /^[A-Z_]/u  no-unused-vars
+  57:20  error  'e' is defined but never used                                                   no-unused-vars
+  70:20  error  'e' is defined but never used                                                   no-unused-vars
+
+D:\My projects\NeuroLearn\neurolearn\src\services\mlService.js
+  11:28  error  'canvas' is defined but never used  no-unused-vars
+
+D:\My projects\NeuroLearn\neurolearn\src\utils\canvasUtils.js
+  10:9  error  'lineCount' is assigned a value but never used. Allowed unused vars must match /^[A-Z_]/u  no-unused-vars
+
+D:\My projects\NeuroLearn\neurolearn\src\utils\dateUtils.js
+  6:3  error  'isWithinInterval' is defined but never used. Allowed unused vars must match /^[A-Z_]/u  no-unused-vars
+
+D:\My projects\NeuroLearn\neurolearn\vite.config.js
+  13:46  error  '__dirname' is not defined  no-undef
+
+✖ 25 problems (25 errors, 0 warnings)
+
+
+============================
+SECTION 8 — FIREBASE CONFIG
+============================
+=== firebase.json ===
+{
+  "hosting": {
+    "public": "dist",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  },
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "functions": {
+    "source": "functions",
+    "runtime": "nodejs20"
+  }
+}
+
+=== .firebaserc ===
+{
+  "projects": {
+    "default": "neurolearn-tutor-app"
+  }
+}
+
+=== firestore.rules ===
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}
+
+=== storage.rules ===
+neurolearn\storage.rules not found
+=== cors.json ===
+neurolearn\cors.json not found
+
+============================
+SECTION 9 — LIVE URL HEALTH
+============================
+Firebase Hosting: 200
+Vercel mirror: <urlopen error _ssl.c:1112: The handshake operation timed out>
+API generate-lesson: 405
+TFLite model file: 200
+
+============================
+SECTION 10 — DEPENDENCY AUDIT
+============================
+# Frontend npm audit
+Skipped npm audit due to shell hanging on Windows
+# Python deps outdated
+Skipped pip list --outdated due to native shell hanging on Windows
+
+============================
+END OF AUDIT
+============================
