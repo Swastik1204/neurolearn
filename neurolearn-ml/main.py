@@ -155,34 +155,35 @@ async def health():
 @app.post("/analyze", response_model=AnalyzeResponse)
 async def analyze(req: AnalyzeRequest):
     try:
-        # Decode base64 image
+        print(f"[ML] Received request for letter: {req.letter}")
+        print(f"[ML] image_base64 length: {len(req.image_base64)}")
+        
+        # 1. Decode base64 image
         try:
             # Handle data:image/png;base64, prefix if present
             encoded = req.image_base64.split(",", 1)[1] if "," in req.image_base64 else req.image_base64
-            img_bytes = base64.b64decode(encoded)
+            image_data = base64.b64decode(encoded)
         except Exception:
-            # Fallback for simple base64
-            try:
-                img_bytes = base64.b64decode(req.image_base64)
-            except Exception:
-                raise HTTPException(status_code=400, detail="Invalid base64 image data")
-
-        # Preprocess
-        img = preprocess_image_from_bytes(img_bytes)
+            raise HTTPException(status_code=400, detail="Invalid base64 image data")
+        
+        # 2. Preprocess
+        img = preprocess_image_from_bytes(image_data)
         if img is None:
             raise HTTPException(status_code=400, detail="Could not process image")
-
-        # Extract features
+        
+        # 3. Extract features
         raw_features = extract_features(img)
+        print(f"[ML] Features extracted successfully")
 
+        # 4. Predict
         if rf_model is not None and scaler is not None:
-            # Scale features
             feat_array = np.array(raw_features).reshape(1, -1)
             feat_scaled = scaler.transform(feat_array)
 
             # Predict
             proba = rf_model.predict_proba(feat_scaled)[0]
             risk_proba = float(proba[1])  # probability of dyslexia indicator
+            print(f"[ML] RF prediction: {risk_proba}")
 
             # Incorporate stroke timing metadata
             pause_ratio = req.stroke_metadata.get('pauseRatio', 0)
@@ -193,13 +194,14 @@ async def analyze(req: AnalyzeRequest):
             # Fallback when model not loaded
             combined_risk = 0.3
             raw_features = [0.0] * 20
+            print("[ML] Using fallback risk score (model not loaded)")
 
         # Compute individual dimension scores (0–100)
         f = raw_features
-        letter_form_score = max(0, 100 - (f[0] * 80 + f[1] * 20))
-        spacing_score = max(0, 100 - (f[4] * 100))
-        baseline_score = max(0, 100 - (f[3] * 150))
-        reversal_score = min(100, (f[14] * 40 + abs(f[19] - 1.0) * 60))
+        letter_form_score = max(0.0, 100.0 - (f[0] * 80.0 + f[1] * 20.0))
+        spacing_score = max(0.0, 100.0 - (f[4] * 100.0))
+        baseline_score = max(0.0, 100.0 - (f[3] * 150.0))
+        reversal_score = min(100.0, (f[14] * 40.0 + abs(f[19] - 1.0) * 60.0))
 
         # Build indicators
         indicators = {
@@ -273,14 +275,17 @@ async def analyze(req: AnalyzeRequest):
                 "rawFeatures": {f"f{i}": v for i, v in enumerate(raw_features)},
             }
             try:
+                print(f"[ML] Calling webhook at: {webhook_url}")
                 async with httpx.AsyncClient() as client:
-                    await client.post(
+                    webhook_response = await client.post(
                         webhook_url,
                         json=payload,
                         headers={"X-ML-Secret": webhook_secret},
                         timeout=10
                     )
-            except Exception:
+                print(f"[ML] Webhook response: {webhook_response.status_code}")
+            except Exception as e:
+                print(f"[ML] Webhook failed: {str(e)}")
                 pass  # Don't fail the analysis if webhook fails
 
         return AnalyzeResponse(
@@ -302,4 +307,5 @@ async def analyze(req: AnalyzeRequest):
     except HTTPException:
         raise
     except Exception as e:
+        print(f"[ML] Error in analyze: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

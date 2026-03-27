@@ -4,12 +4,16 @@ import { verifyMLSecret } from '../../lib/auth.js';
 import { generateHandwritingInterpretation } from '../../lib/genAI.js';
 
 export default async function handler(req, res) {
+  setCors(req, res);
   if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', 'https://neurolearn-tutor-app.web.app');
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-ML-Secret');
     return res.status(200).end();
   }
+
+  console.log('[webhook/ml-result] Called with method:', req.method);
+  console.log('[webhook/ml-result] Secret match:',
+    req.headers['x-ml-secret'] === process.env.ML_WEBHOOK_SECRET);
+  console.log('[webhook/ml-result] Body keys:', Object.keys(req.body || {}));
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -38,17 +42,19 @@ export default async function handler(req, res) {
     const studentName = studentUserSnap.exists ? (studentUserSnap.data().displayName || 'Student') : 'Student';
 
     // Write analysis result
-    const resultRef = await adminDb.collection('analysisResults').add({
+    const docRef = await adminDb.collection('analysisResults').add({
       sampleId,
       studentId,
       letter: letter || '',
       analyzedAt: new Date(),
+      createdAt: new Date().toISOString(), // Step 5 requirement
       scores: {
         letterFormScore: scores.letterFormScore || 0,
         spacingScore: scores.spacingScore || 0,
         baselineScore: scores.baselineScore || 0,
         reversalScore: scores.reversalScore || 0,
-        overallDyslexiaRisk: scores.overallRisk || 0,
+        overallRisk: scores.overallRisk || 0, // Step 5 requirement
+        overallDyslexiaRisk: scores.overallRisk || 0, // Keep for dashboard compatibility
       },
       indicators: {
         reversals: indicators?.reversals || [],
@@ -59,18 +65,20 @@ export default async function handler(req, res) {
       letter_specific: letter_specific || {},
       rawFeatures: rawFeatures || {},
     });
+    console.log('[webhook/ml-result] analysisResults doc written:', docRef.id);
 
-    // Generate AI interpretation (non-blocking for the immediate 200 response if possible, but we'll do it here for stability)
-    let aiInterpretation = "";
+    // Generate AI interpretation
+    let interpretation = "";
     try {
-      aiInterpretation = await generateHandwritingInterpretation({
+      interpretation = await generateHandwritingInterpretation({
         letter: letter || 'unknown',
         scores: scores,
         letter_specific: letter_specific,
         studentName
       });
       // Update the result doc with the interpretation
-      await resultRef.update({ geminiInterpretation: aiInterpretation });
+      await docRef.update({ geminiInterpretation: interpretation });
+      console.log('[webhook/ml-result] Gemini interpretation generated');
     } catch (aiErr) {
       console.error('Interpretation failed:', aiErr.message);
     }
@@ -79,16 +87,16 @@ export default async function handler(req, res) {
     await adminDb.collection('handwritingSamples').doc(sampleId).update({
       analysisStatus: 'complete',
       analysisResult: {
-        resultId: resultRef.id,
+        resultId: docRef.id,
         overallRisk: scores.overallRisk || 0,
         letter: letter || '',
-        aiInterpretation: aiInterpretation
+        aiInterpretation: interpretation
       },
     });
 
     return res.status(200).json({
       success: true,
-      resultId: resultRef.id,
+      resultId: docRef.id,
     });
   } catch (error) {
     console.error('ml-result webhook error:', error.message);
