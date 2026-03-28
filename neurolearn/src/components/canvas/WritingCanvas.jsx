@@ -111,8 +111,12 @@ export default function WritingCanvas({ prompt, onSubmit, disabled = false }) {
     setStrokes((prev) => prev.slice(0, -1));
   };
 
-  const handleSubmit = async () => {
-    if (strokes.length === 0 || isSubmitting) return;
+  const handleSubmit = async (submitMeta = {}) => {
+    // CRITICAL: Don't submit if no strokes exist
+    if (strokes.length === 0 || isSubmitting) {
+      console.warn('Submission blocked: no strokes on canvas', { strokesCount: strokes.length, isSubmitting });
+      return;
+    }
     setIsSubmitting(true);
 
     try {
@@ -124,6 +128,7 @@ export default function WritingCanvas({ prompt, onSubmit, disabled = false }) {
         imageBlob: blob,
         strokeData: strokes,
         strokeMetadata: metadata,
+        submitMeta,
       });
 
       // Clear after successful submit
@@ -133,7 +138,7 @@ export default function WritingCanvas({ prompt, onSubmit, disabled = false }) {
     } finally {
       setIsSubmitting(false);
     }
-  };
+  }
 
   return (
     <div className="w-full">
@@ -155,6 +160,16 @@ export default function WritingCanvas({ prompt, onSubmit, disabled = false }) {
           aria-label={`Writing canvas for: ${prompt}`}
           role="img"
         />
+        
+        {/* Empty canvas hint */}
+        {strokes.length === 0 && currentStroke.length === 0 && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none rounded-lg">
+            <div className="text-center">
+              <p className="text-sm font-medium text-muted-foreground/60">Start drawing here</p>
+              <p className="text-xs text-muted-foreground/40 mt-1">Trace the letter above</p>
+            </div>
+          </div>
+        )}
       </div>
 
       <CanvasToolbar
@@ -162,6 +177,7 @@ export default function WritingCanvas({ prompt, onSubmit, disabled = false }) {
         onUndo={handleUndo}
         onSubmit={handleSubmit}
         canUndo={strokes.length > 0}
+        canSubmit={strokes.length > 0}
         isSubmitting={isSubmitting}
       />
     </div>

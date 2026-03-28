@@ -1,6 +1,6 @@
 import { Eraser, Undo2, Send, Trash2 } from 'lucide-react';
 
-export default function CanvasToolbar({ onClear, onUndo, onSubmit, canUndo, isSubmitting }) {
+export default function CanvasToolbar({ onClear, onUndo, onSubmit, canUndo, isSubmitting, canSubmit = true }) {
   return (
     <div className="flex items-center gap-3 mt-4">
       <button
@@ -25,10 +25,11 @@ export default function CanvasToolbar({ onClear, onUndo, onSubmit, canUndo, isSu
       <div className="flex-1" />
 
       <button
-        onClick={onSubmit}
-        disabled={isSubmitting}
+        onClick={() => onSubmit && onSubmit()}
+        disabled={isSubmitting || !canSubmit}
         className="flex items-center gap-2 px-6 py-3 rounded-xl gradient-primary text-white font-medium hover:opacity-90 transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
         aria-label="Submit handwriting"
+        title={!canSubmit ? "Draw something first" : "Submit your handwriting"}
       >
         {isSubmitting ? (
           <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />

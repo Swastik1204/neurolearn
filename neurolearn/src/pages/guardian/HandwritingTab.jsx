@@ -44,7 +44,7 @@ export default function HandwritingTab({ studentId }) {
     setSelectedSample(sample);
     setAnalysisResult(null);
 
-    // Fetch analysis result for this sample
+    // Try to fetch analysis result if it's complete
     if (sample.analysisStatus === 'complete') {
       try {
         const q = query(
@@ -59,6 +59,49 @@ export default function HandwritingTab({ studentId }) {
       } catch (err) {
         console.error('Error loading analysis:', err.message);
       }
+    } else if (sample.analysisStatus === 'processing') {
+      // Poll for analysis result if still processing
+      const maxRetries = 5;
+      let retries = 0;
+      const pollInterval = setInterval(async () => {
+        if (retries >= maxRetries) {
+          clearInterval(pollInterval);
+          return;
+        }
+        try {
+          const q = query(
+            collection(db, 'analysisResults'),
+            where('sampleId', '==', sample.id),
+            limit(1)
+          );
+          const snap = await getDocs(q);
+          if (snap.docs.length > 0) {
+            setAnalysisResult(snap.docs[0].data());
+            clearInterval(pollInterval);
+          }
+          retries++;
+        } catch (err) {
+          console.error('Error polling analysis:', err.message);
+          retries++;
+        }
+      }, 2000);
+    }
+  };
+
+  const handleRetryAnalysis = async () => {
+    if (!selectedSample) return;
+    try {
+      const q = query(
+        collection(db, 'analysisResults'),
+        where('sampleId', '==', selectedSample.id),
+        limit(1)
+      );
+      const snap = await getDocs(q);
+      if (snap.docs.length > 0) {
+        setAnalysisResult(snap.docs[0].data());
+      }
+    } catch (err) {
+      console.error('Error retrying analysis:', err.message);
     }
   };
 
@@ -101,6 +144,7 @@ export default function HandwritingTab({ studentId }) {
           sample={selectedSample}
           analysisResult={analysisResult}
           onClose={() => { setSelectedSample(null); setAnalysisResult(null); }}
+          onRetry={handleRetryAnalysis}
         />
       )}
 

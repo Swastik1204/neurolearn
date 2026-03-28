@@ -2,9 +2,21 @@ import { useEffect, useRef, useState } from 'react';
 import { X, AlertTriangle, CheckCircle, Star } from 'lucide-react';
 import ScoreBar from '@/components/charts/ScoreBar';
 
-export default function AnnotatedSampleModal({ sample, analysisResult, onClose }) {
+export default function AnnotatedSampleModal({ sample, analysisResult, onClose, onRetry }) {
   const canvasRef = useRef(null);
   const [imageLoaded, setImageLoaded] = useState(false);
+  const [isRetrying, setIsRetrying] = useState(false);
+
+  const handleRetry = async () => {
+    if (onRetry) {
+      setIsRetrying(true);
+      try {
+        await onRetry();
+      } finally {
+        setIsRetrying(false);
+      }
+    }
+  };
 
   useEffect(() => {
     if (!(sample?.imageBase64 || sample?.imageUrl) || !canvasRef.current) return;
@@ -188,8 +200,35 @@ export default function AnnotatedSampleModal({ sample, analysisResult, onClose }
           )}
 
           {!analysisResult && (
-            <div className="text-center py-6 text-muted-foreground">
-              <p>Analysis not yet available for this sample.</p>
+            <div className="text-center py-6">
+              {sample.analysisStatus === 'processing' ? (
+                <div className="flex flex-col items-center gap-3">
+                  <div className="w-8 h-8 border-3 border-primary/30 border-t-primary rounded-full animate-spin" />
+                  <p className="text-muted-foreground font-medium">Analysis is processing...</p>
+                  <p className="text-xs text-muted-foreground">This may take a few moments</p>
+                  {onRetry && (
+                    <button
+                      onClick={handleRetry}
+                      disabled={isRetrying}
+                      className="mt-4 px-3 py-1.5 text-sm font-medium bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
+                    >
+                      {isRetrying ? 'Checking...' : 'Check Status'}
+                    </button>
+                  )}
+                </div>
+              ) : sample.analysisStatus === 'pending' ? (
+                <div className="flex flex-col items-center gap-3">
+                  <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center">
+                    <svg className="w-6 h-6 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <p className="text-muted-foreground font-medium">Waiting to analyze...</p>
+                  <p className="text-xs text-muted-foreground">Analysis will start shortly</p>
+                </div>
+              ) : (
+                <p className="text-muted-foreground">Analysis not yet available for this sample.</p>
+              )}
             </div>
           )}
         </div>
