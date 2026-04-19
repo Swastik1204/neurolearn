@@ -23,9 +23,11 @@ export default defineConfig({
   },
   optimizeDeps: {
     include: ['long', 'seedrandom'],
+    exclude: ['face-api.js'],
   },
   build: {
     rollupOptions: {
+      external: [],
       output: {
         manualChunks(id) {
           if (id.includes('node_modules')) {
