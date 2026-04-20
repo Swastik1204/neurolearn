@@ -1,6 +1,6 @@
 import { setCors } from '../../lib/cors.js';
 import { adminDb, adminAuth } from '../../lib/firebaseAdmin.js';
-import { verifyToken, getUserRole, auditLog } from '../../lib/auth.js';
+import { verifyToken, getUserRole } from '../../lib/auth.js';
 
 export default async function handler(req, res) {
   setCors(req, res);
@@ -23,21 +23,12 @@ export default async function handler(req, res) {
       }
     }
 
-    // Audit log before deletion
-    await auditLog('delete_user_data', {
-      requestedBy: decoded.uid,
-      studentId: uid,
-      metadata: { action: 'full_deletion' },
-    });
-
     // Delete all Firestore documents for this user/student
     const collections = [
       'sessions',
       'handwritingSamples',
       'analysisResults',
-      'behaviourSnapshots',
       'reports',
-      'assignments',
     ];
 
     for (const col of collections) {
@@ -52,12 +43,6 @@ export default async function handler(req, res) {
     if ((await userDoc.get()).exists) {
       await userDoc.delete();
     }
-
-    // Delete student document
-    const studentSnap = await adminDb.collection('students').where('uid', '==', uid).get();
-    const studentBatch = adminDb.batch();
-    studentSnap.docs.forEach(doc => studentBatch.delete(doc.ref));
-    if (studentSnap.docs.length > 0) await studentBatch.commit();
 
     // Delete Firebase Auth user
     try {

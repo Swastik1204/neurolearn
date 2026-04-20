@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { 
-  collection, query, where, getDocs, 
-  doc, setDoc, updateDoc, arrayUnion 
+  collection, query, where, getDocs,
+  doc, updateDoc, arrayUnion
 } from 'firebase/firestore';
 import { db, auth } from '@/services/firebase';
+import useAuthStore from '@/store/authStore';
 import { X, UserPlus, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 
-export default function LinkStudentModal({ role, onSuccess, onClose }) {
+export default function LinkStudentModal({ onSuccess, onClose }) {
+  const addStudentId = useAuthStore((state) => state.addStudentId);
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -28,56 +30,24 @@ export default function LinkStudentModal({ role, onSuccess, onClose }) {
         throw new Error('No student account found with that email. Please ensure the student has already signed up.');
       }
 
-      const studentData = querySnapshot.docs[0].data();
-      const studentUid = studentData.uid;
+      const studentDoc = querySnapshot.docs[0];
+      const studentData = studentDoc.data();
+      const studentUid = studentDoc.id;
       const studentName = studentData.displayName || 'Student';
 
-      // 2. Check/Create student profile in /students collection
-      const studentsRef = collection(db, 'students');
-      const studentQuery = query(studentsRef, where('uid', '==', studentUid));
-      const studentSnapshot = await getDocs(studentQuery);
-      
-      let studentDocId;
-      if (studentSnapshot.empty) {
-        // Create new student profile document
-        const newStudentDoc = doc(studentsRef);
-        studentDocId = newStudentDoc.id;
-        await setDoc(newStudentDoc, {
-          uid: studentUid,
-          displayName: studentName,
-          guardianId: role === 'guardian' ? auth.currentUser.uid : '',
-          teacherId: role === 'teacher' ? auth.currentUser.uid : '',
-          createdAt: new Date().toISOString()
-        });
-      } else {
-        // Use existing student profile document
-        studentDocId = studentSnapshot.docs[0].id;
-        
-        // Update the guardian/teacher reference on the student profile if not present
-        const updateData = {};
-        if (role === 'guardian') updateData.guardianId = auth.currentUser.uid;
-        if (role === 'teacher') updateData.teacherId = auth.currentUser.uid;
-        await updateDoc(doc(db, 'students', studentDocId), updateData);
-      }
-
-      // 3. Update the Guardian/Teacher's /users document
+      // 2. Update the Guardian/Teacher's /users document
       const userRef = doc(db, 'users', auth.currentUser.uid);
       await updateDoc(userRef, {
-        linkedStudentIds: arrayUnion(studentDocId)
+        linkedStudentIds: arrayUnion(studentUid)
       });
 
-      // 4. Update the Student's /users record with the link back
-      const studentUserRef = doc(db, 'users', studentUid);
-      const studentUpdate = {};
-      if (role === 'guardian') studentUpdate.guardianId = auth.currentUser.uid;
-      if (role === 'teacher') studentUpdate.teacherId = auth.currentUser.uid;
-      await updateDoc(studentUserRef, studentUpdate);
+      addStudentId(studentUid);
 
       setSuccess(`Successfully linked with ${studentName}!`);
       
       // Delay closing to show success message
       setTimeout(() => {
-        if (onSuccess) onSuccess(studentDocId);
+        if (onSuccess) onSuccess(studentUid);
         onClose();
       }, 2000);
 

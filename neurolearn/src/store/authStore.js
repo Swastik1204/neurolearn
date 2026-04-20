@@ -13,6 +13,13 @@ const useAuthStore = create((set, get) => ({
   setUser: (user, role, studentIds = []) =>
     set({ user, role, studentIds, loading: false }),
 
+  addStudentId: (studentId) =>
+    set((state) => ({
+      studentIds: state.studentIds.includes(studentId)
+        ? state.studentIds
+        : [...state.studentIds, studentId],
+    })),
+
   clearUser: () =>
     set({ user: null, role: null, studentIds: [], loading: false }),
 

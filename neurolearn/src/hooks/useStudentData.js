@@ -7,7 +7,6 @@ export default function useStudentData(studentId) {
   const [data, setData] = useState({
     sessions: [],
     analysisResults: [],
-    behaviourSnapshots: [],
     summary: null,
     loading: true,
     error: null,
@@ -52,21 +51,10 @@ export default function useStudentData(studentId) {
         const analysisSnap = await getDocs(analysisQuery);
         const analysisResults = analysisSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
-        // Fetch behaviour snapshots
-        const behavQuery = query(
-          collection(db, 'behaviourSnapshots'),
-          where('studentId', '==', studentId),
-          orderBy('weekStartDate', 'desc'),
-          limit(4)
-        );
-        const behavSnap = await getDocs(behavQuery);
-        const behaviourSnapshots = behavSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-
         if (!cancelled) {
           setData({
             sessions,
             analysisResults,
-            behaviourSnapshots,
             summary: summaryData,
             loading: false,
             error: null,

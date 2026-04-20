@@ -69,15 +69,17 @@ export default function Signup() {
 
   const createUserDocument = async (uid, name, userEmail) => {
     const userData = {
-      uid: uid,
       role: selectedRole,
       displayName: name,
       email: userEmail ?? auth.currentUser?.email ?? email ?? '',
       createdAt: serverTimestamp(),
-      linkedStudentIds: [],
-      consentGiven: selectedRole === 'guardian',
-      consentTimestamp: selectedRole === 'guardian' ? serverTimestamp() : null,
     };
+
+    if (selectedRole === 'guardian') {
+      userData.linkedStudentIds = [];
+      userData.consentGiven = true;
+    }
+
     await setDoc(doc(db, 'users', uid), userData);
   };
 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, limit, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, limit, getDocs } from 'firebase/firestore';
 import { db } from '@/services/firebase';
 import ReportCard from '@/components/dashboard/ReportCard';
 
@@ -43,20 +43,6 @@ export default function ReportTab({ studentId, studentName }) {
         );
         const analysisSnap = await getDocs(analysisQ);
         let nextCount = analysisSnap.size;
-
-        if (nextCount === 0) {
-          const studentDocSnap = await getDoc(doc(db, 'students', studentId));
-          const uid = studentDocSnap.exists() ? studentDocSnap.data()?.uid : null;
-          if (uid) {
-            const byUidQ = query(
-              collection(db, 'analysisResults'),
-              where('studentId', '==', uid),
-              limit(100)
-            );
-            const byUidSnap = await getDocs(byUidQ);
-            nextCount = byUidSnap.size;
-          }
-        }
 
         if (!cancelled) {
           setReports(data);

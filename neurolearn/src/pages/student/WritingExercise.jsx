@@ -1,40 +1,19 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { collection, addDoc, serverTimestamp, getDoc, doc, query, where, getDocs, limit } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/services/firebase';
 import useCurrentUser from '@/hooks/useCurrentUser';
 import useEmotionDetection from '@/hooks/useEmotionDetection';
 import WritingCanvas from '@/components/canvas/WritingCanvas';
 import TextToSpeech from '@/components/TextToSpeech';
 import { analyzeHandwriting } from '@/services/api';
-import { ensureSessionsCollection } from '@/lib/utils';
 import mlService from '../../services/mlService';
-import { BookOpen, ArrowLeft, Timer, Play } from 'lucide-react';
+import { BookOpen, ArrowLeft } from 'lucide-react';
 
-const DEFAULT_LETTERS = ['b', 'd', 'p', 'q', 'g', 'y', 'f', 'h', 'n', 'm'];
-const DIFFICULTY_PRESETS = {
-  easy: {
-    letters: ['a', 'e', 'i', 'o', 'c', 'm', 'n', 's', 'u', 'w'],
-    promptSize: '160px',
-    apiTimeoutMs: 3500,
-    paceLabel: 'Relaxed pace',
-    timePerLetterMs: 8000,
-  },
-  medium: {
-    letters: DEFAULT_LETTERS,
-    promptSize: '120px',
-    apiTimeoutMs: 2500,
-    paceLabel: 'Standard pace',
-    timePerLetterMs: 5000,
-  },
-  hard: {
-    letters: ['b', 'd', 'p', 'q', 'b', 'd', 'p', 'q', 'g', 'y'],
-    promptSize: '80px',
-    apiTimeoutMs: 1500,
-    paceLabel: 'Challenge pace',
-    timePerLetterMs: 3000,
-  },
-};
+const EXERCISE_LENGTH = 2;
+const DEFAULT_LETTERS = ['b', 'd'];
+const DEFAULT_PROMPTS = DEFAULT_LETTERS.map((letter) => letter.toUpperCase());
+const ANALYSIS_TIMEOUT_MS = 2500;
 
 const EMOTION_EMOJI = {
   happy: '🙂',
@@ -53,44 +32,34 @@ export default function WritingExercise() {
   const {
     videoRef,
     dominantEmotion,
-    emotionConfidence,
-    modelReady,
     cameraReady,
     modelsLoading,
-  } = useEmotionDetection(true);
+  } = useEmotionDetection();
 
-  const [practiceConfig, setPracticeConfig] = useState({ difficulty: 'medium', focusLetters: [] });
-  const [selectedDifficulty, setSelectedDifficulty] = useState('medium');
-  const [difficultyConfirmed, setDifficultyConfirmed] = useState(false);
-  const [configLoading, setConfigLoading] = useState(true);
-  const [prompts, setPrompts] = useState(DEFAULT_LETTERS.map((l) => l.toUpperCase()));
+  const [prompts, setPrompts] = useState(DEFAULT_PROMPTS);
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [sessionId] = useState(() => `session_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`);
+  const sessionStartedAtRef = useRef(new Date());
   const [wordTimings, setWordTimings] = useState([]);
   const startTimeRef = useRef(null);
   const submitInFlightRef = useRef(false);
-  const submitHandlerRef = useRef(null);
 
   const letterResultsRef = useRef([]);
-  const [letterResults, setLetterResults] = useState([]);
+  const [, setLetterResults] = useState([]);
   const [isAnalysing, setIsAnalysing] = useState(false);
   const [letterFeedback, setLetterFeedback] = useState(null);
-  const [elapsedTime, setElapsedTime] = useState(0);
 
-  const resolvePromptsForDifficulty = (difficulty, focusLetters = []) => {
+  const resolvePrompts = useCallback(() => {
     if (location.state?.words?.length > 0) {
-      return location.state.words.map((w) => w[0]?.toUpperCase()).filter(Boolean);
+      return location.state.words
+        .map((word) => word?.[0]?.toUpperCase())
+        .filter(Boolean)
+        .slice(0, EXERCISE_LENGTH);
     }
 
-    const preset = DIFFICULTY_PRESETS[difficulty] || DIFFICULTY_PRESETS.medium;
-    const normalizedFocusLetters = (focusLetters || []).map((l) => String(l).toLowerCase());
-    const adaptiveLetters = difficulty === 'hard' && normalizedFocusLetters.length > 0
-      ? [...normalizedFocusLetters.slice(0, 4), ...preset.letters].slice(0, 10)
-      : preset.letters;
-
-    return adaptiveLetters.map((l) => l.toUpperCase());
-  };
+    return DEFAULT_PROMPTS;
+  }, [location.state?.words]);
 
   // Initialization if any (mlService handled)
   useEffect(() => {
@@ -98,94 +67,42 @@ export default function WritingExercise() {
   }, []);
 
   useEffect(() => {
-    if (!user?.uid) {
-      setConfigLoading(false);
-      return;
-    }
+    const nextPrompts = resolvePrompts();
+    setPrompts(nextPrompts.length > 0 ? nextPrompts : DEFAULT_PROMPTS);
+    setCurrentIndex(0);
+  }, [resolvePrompts]);
 
-    let cancelled = false;
-
-    const loadPracticeConfig = async () => {
-      try {
-        let studentData = null;
-
-        const directRef = doc(db, 'students', user.uid);
-        const directSnap = await getDoc(directRef);
-        if (directSnap.exists()) {
-          studentData = directSnap.data();
-        } else {
-          const byUidQ = query(
-            collection(db, 'students'),
-            where('uid', '==', user.uid),
-            limit(1)
-          );
-          const byUidSnap = await getDocs(byUidQ);
-          if (!byUidSnap.empty) {
-            studentData = byUidSnap.docs[0].data();
-          }
-        }
-
-        const resolvedConfig = {
-          difficulty: (studentData?.practiceConfig?.difficulty || 'medium').toLowerCase(),
-          focusLetters: studentData?.practiceConfig?.focusLetters || [],
-        };
-
-        const nextDifficulty = DIFFICULTY_PRESETS[resolvedConfig.difficulty]
-          ? resolvedConfig.difficulty
-          : 'medium';
-
-        const nextPrompts = resolvePromptsForDifficulty(nextDifficulty, resolvedConfig.focusLetters || []);
-
-        if (!cancelled) {
-          setPracticeConfig({ difficulty: nextDifficulty, focusLetters: resolvedConfig.focusLetters || [] });
-          setSelectedDifficulty(nextDifficulty);
-          setPrompts(nextPrompts.length > 0 ? nextPrompts : DEFAULT_LETTERS.map((l) => l.toUpperCase()));
-          setCurrentIndex(0);
-          setConfigLoading(false);
-        }
-      } catch (err) {
-        console.error('Failed to load practice config:', err.message);
-        if (!cancelled) {
-          setPracticeConfig({ difficulty: 'medium', focusLetters: [] });
-          setSelectedDifficulty('medium');
-          setPrompts(DEFAULT_LETTERS.map((l) => l.toUpperCase()));
-          setConfigLoading(false);
-        }
-      }
-    };
-
-    loadPracticeConfig();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [user?.uid, location.state?.words]);
-
-  const activeDifficulty = difficultyConfirmed ? practiceConfig.difficulty : selectedDifficulty;
-  const difficultyProfile = DIFFICULTY_PRESETS[activeDifficulty] || DIFFICULTY_PRESETS.medium;
-  const difficultyLabel = `${activeDifficulty.charAt(0).toUpperCase()}${activeDifficulty.slice(1)}`;
   const currentWord = prompts[currentIndex];
   const isLastWord = currentIndex === prompts.length - 1;
   const progress = prompts.length > 0 ? ((currentIndex) / prompts.length) * 100 : 0;
 
-  const handleStartExercise = () => {
-    const chosenDifficulty = DIFFICULTY_PRESETS[selectedDifficulty] ? selectedDifficulty : 'medium';
-    const nextPrompts = resolvePromptsForDifficulty(chosenDifficulty, practiceConfig.focusLetters || []);
+  useEffect(() => {
+    if (!currentWord || isAnalysing || letterFeedback) {
+      return;
+    }
 
-    setPracticeConfig((prev) => ({ ...prev, difficulty: chosenDifficulty }));
-    setPrompts(nextPrompts.length > 0 ? nextPrompts : DEFAULT_LETTERS.map((l) => l.toUpperCase()));
-    setCurrentIndex(0);
-    setWordTimings([]);
-    setLetterResults([]);
-    letterResultsRef.current = [];
-    setLetterFeedback(null);
-    setIsAnalysing(false);
-    setElapsedTime(0);
-    startTimeRef.current = null;
-    setDifficultyConfirmed(true);
-  };
+    startTimeRef.current = Date.now();
+  }, [currentWord, isAnalysing, letterFeedback]);
 
-  const handleSubmit = async ({ imageBlob, strokeData, strokeMetadata = {}, submitMeta = {} }) => {
+  const finishSession = useCallback(async (lastDuration) => {
+    try {
+      const totalDuration = wordTimings.reduce((sum, w) => sum + w.durationMs, 0) + lastDuration;
+      await addDoc(collection(db, 'sessions'), {
+        studentId: user?.uid || 'anonymous',
+        startedAt: sessionStartedAtRef.current,
+        endedAt: new Date(),
+        exerciseMode: 'single_letter',
+        letterCount: prompts.length,
+        durationMs: totalDuration,
+        deviceType: navigator.maxTouchPoints > 0 ? 'touch' : 'mouse',
+      });
+    } catch (err) {
+      console.error('Session save failed:', err.message);
+    }
+    navigate('/student/complete', { state: { letterResults: letterResultsRef.current } });
+  }, [navigate, prompts.length, user?.uid, wordTimings]);
+
+  const handleSubmit = useCallback(async ({ strokeData, strokeMetadata = {}, submitMeta = {} } = {}) => {
     if (submitInFlightRef.current || !currentWord) return;
     
     // CRITICAL: Validate that there's actual content before submitting
@@ -210,7 +127,7 @@ export default function WritingExercise() {
     submitInFlightRef.current = true;
 
     const endTime = Date.now();
-    const duration = startTimeRef.current ? endTime - startTimeRef.current : difficultyProfile.timePerLetterMs;
+    const duration = startTimeRef.current ? endTime - startTimeRef.current : 0;
     setWordTimings((prev) => [...prev, { word: currentWord, durationMs: duration }]);
 
     setIsAnalysing(true);
@@ -220,16 +137,8 @@ export default function WritingExercise() {
       const imageBase64 = canvas ? canvas.toDataURL('image/png') : null;
       const studentId = user?.uid || 'anonymous';
 
-      const canCaptureEmotion = cameraReady && modelReady && !modelsLoading;
-      const emotionAtSubmit = canCaptureEmotion && dominantEmotion ? dominantEmotion : null;
-      const emotionConfidenceAtSubmit = canCaptureEmotion && typeof emotionConfidence === 'number'
-        ? emotionConfidence
-        : null;
-
       const mergedStrokeMetadata = {
         ...strokeMetadata,
-        currentLetter: currentWord,
-        exerciseType: 'single_letter',
         autoSubmitted: !!submitMeta.autoSubmitted,
         timeUp: !!submitMeta.timeUp,
         submitReason: submitMeta.submitReason || 'manual',
@@ -241,8 +150,6 @@ export default function WritingExercise() {
         capturedAt: serverTimestamp(),
         imageBase64,
         promptLetter: currentWord,
-        emotionAtSubmit,
-        emotionConfidence: emotionConfidenceAtSubmit,
         strokeMetadata: mergedStrokeMetadata,
         analysisStatus: 'pending',
         analysisResult: {},
@@ -254,17 +161,15 @@ export default function WritingExercise() {
         studentId,
         letter: currentWord.toLowerCase(),
         strokeMetadata: mergedStrokeMetadata,
-        emotionAtSubmit,
-        emotionConfidence: emotionConfidenceAtSubmit,
       });
 
       let result = null;
       try {
         result = await Promise.race([
           apiPromise,
-          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), difficultyProfile.apiTimeoutMs))
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ANALYSIS_TIMEOUT_MS))
         ]);
-      } catch (_) {
+      } catch {
         // Keep the student flow moving while async analysis finishes server-side.
       }
 
@@ -274,15 +179,11 @@ export default function WritingExercise() {
         risk_level: result.risk_level,
         letter: currentWord,
         note: result.letter_specific?.note || '',
-        emotionAtSubmit,
-        emotionConfidence: emotionConfidenceAtSubmit,
         timeUp: !!submitMeta.timeUp,
       } : {
         risk_level: 'pending',
         letter: currentWord,
         note: 'Analysis in progress...',
-        emotionAtSubmit,
-        emotionConfidence: emotionConfidenceAtSubmit,
         timeUp: !!submitMeta.timeUp,
       };
 
@@ -299,7 +200,6 @@ export default function WritingExercise() {
           finishSession(duration);
         } else {
           setCurrentIndex((prev) => prev + 1);
-          startTimeRef.current = Date.now();
         }
       }, 2000);
     } catch (error) {
@@ -308,83 +208,11 @@ export default function WritingExercise() {
       if (isLastWord) finishSession(duration);
       else {
         setCurrentIndex((prev) => prev + 1);
-        startTimeRef.current = Date.now();
       }
     } finally {
       submitInFlightRef.current = false;
     }
-  };
-
-  useEffect(() => {
-    submitHandlerRef.current = handleSubmit;
-  }, [handleSubmit]);
-
-  useEffect(() => {
-    if (configLoading || !difficultyConfirmed || !currentWord || isAnalysing || letterFeedback) {
-      setElapsedTime(0);
-      return;
-    }
-
-    startTimeRef.current = Date.now();
-    setElapsedTime(0);
-    
-    // Update elapsed time every 100ms for smooth countdown
-    const timerInterval = setInterval(() => {
-      if (startTimeRef.current) {
-        const elapsed = Math.min(
-          Math.round((Date.now() - startTimeRef.current) / 100),
-          Math.round(difficultyProfile.timePerLetterMs / 100)
-        );
-        setElapsedTime(elapsed);
-      }
-    }, 100);
-
-    // Auto-submit timeout
-    const timeoutId = setTimeout(() => {
-      if (submitInFlightRef.current || isAnalysing || letterFeedback) return;
-      submitHandlerRef.current?.({
-        strokeMetadata: {
-          timedOut: true,
-          timeoutMs: difficultyProfile.timePerLetterMs,
-        },
-        submitMeta: {
-          autoSubmitted: true,
-          timeUp: true,
-          submitReason: 'time_up',
-        },
-      });
-    }, difficultyProfile.timePerLetterMs);
-
-    return () => {
-      clearInterval(timerInterval);
-      clearTimeout(timeoutId);
-    };
-  }, [currentIndex, currentWord, configLoading, difficultyConfirmed, isAnalysing, letterFeedback, difficultyProfile.timePerLetterMs]);
-
-  const finishSession = async (lastDuration) => {
-    try {
-      await ensureSessionsCollection(db);
-      const totalDuration = wordTimings.reduce((sum, w) => sum + w.durationMs, 0) + lastDuration;
-      await addDoc(collection(db, 'sessions'), {
-        studentId: user?.uid || 'anonymous',
-        startedAt: serverTimestamp(),
-        endedAt: serverTimestamp(),
-        exerciseType: 'writing',
-        durationMs: totalDuration,
-        completionRate: 1.0,
-        errorCorrectionCount: 0,
-        pauseEvents: [],
-        deviceType: navigator.maxTouchPoints > 0 ? 'touch' : 'mouse',
-        timeOfDay: new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 17 ? 'afternoon' : 'evening',
-        letterCount: prompts.length,
-        exerciseMode: 'single_letter',
-        practiceDifficulty: practiceConfig.difficulty,
-      });
-    } catch (err) {
-      console.error('Session save failed:', err.message);
-    }
-    navigate('/student/complete', { state: { letterResults: letterResultsRef.current } });
-  };
+  }, [currentWord, finishSession, isLastWord, sessionId, user?.uid]);
 
   const exerciseContent = (
     <div className="w-full relative">
@@ -450,23 +278,8 @@ export default function WritingExercise() {
       {/* Prompt */}
       <div className="text-center mb-10">
         <div className="mb-5 flex flex-wrap items-center justify-center gap-2">
-          <span className="badge badge-outline">Difficulty: {difficultyLabel}</span>
-          <span className="badge badge-ghost gap-1">
-            <Timer className="w-3.5 h-3.5" />
-            {`${difficultyProfile.paceLabel} · ${Math.round(difficultyProfile.timePerLetterMs / 1000)}s per letter`}
-          </span>
-          
-          {/* Countdown Timer */}
-          <span className={`badge gap-1 ${
-            elapsedTime > Math.round(difficultyProfile.timePerLetterMs / 100 * 0.8)
-              ? 'badge-error animate-pulse'
-              : elapsedTime > Math.round(difficultyProfile.timePerLetterMs / 100 * 0.5)
-              ? 'badge-warning'
-              : 'badge-info'
-          }`}>
-            <Timer className="w-3.5 h-3.5" />
-            {Math.max(0, Math.round(difficultyProfile.timePerLetterMs / 1000) - Math.round((elapsedTime * 100) / 1000))}s
-          </span>
+          <span className="badge badge-outline">Simple practice</span>
+          <span className="badge badge-ghost">2 letters only</span>
         </div>
 
         <div className="flex justify-center gap-2 mb-6">
@@ -486,7 +299,6 @@ export default function WritingExercise() {
           <span 
             className="font-bold text-foreground leading-none select-none"
             style={{ 
-              fontSize: difficultyProfile.promptSize,
               fontFamily: '"OpenDyslexic", "Inter", sans-serif',
               textShadow: '2px 2px 0px rgba(0,0,0,0.05)'
             }}
@@ -504,59 +316,6 @@ export default function WritingExercise() {
         onSubmit={handleSubmit}
         disabled={isAnalysing || !!letterFeedback}
       />
-      
-      {/* Time warning if almost out of time */}
-      {elapsedTime > Math.round(difficultyProfile.timePerLetterMs / 100 * 0.7) && !letterFeedback && (
-        <div className="mt-4 p-3 bg-warning/10 border border-warning/30 rounded-lg text-sm text-warning font-medium animate-pulse text-center">
-          ⏰ Time is running out! Hurry up and submit your answer.
-        </div>
-      )}
-    </div>
-  );
-
-  const difficultySelector = (
-    <div className="rounded-2xl border border-border bg-card p-6 md:p-8 shadow-sm animate-fade-in">
-      <h2 className="text-2xl font-bold text-foreground mb-2">Choose Your Difficulty</h2>
-      <p className="text-sm text-muted-foreground mb-6">
-        Pick a level before you start this exercise.
-      </p>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        {Object.entries(DIFFICULTY_PRESETS).map(([key, preset]) => {
-          const isActive = selectedDifficulty === key;
-          return (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setSelectedDifficulty(key)}
-              className={`text-left rounded-xl border p-4 transition-all ${
-                isActive
-                  ? 'border-primary bg-primary/5 shadow-md'
-                  : 'border-border hover:border-primary/40 hover:bg-muted/40'
-              }`}
-            >
-              <div className="flex items-center justify-between mb-2">
-                <span className="font-semibold text-foreground capitalize">{key}</span>
-                <span className="text-xs text-muted-foreground">
-                  {Math.round(preset.timePerLetterMs / 1000)}s
-                </span>
-              </div>
-              <p className="text-sm text-muted-foreground">{preset.paceLabel}</p>
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="flex items-center justify-end">
-        <button
-          type="button"
-          onClick={handleStartExercise}
-          className="btn btn-primary gap-2"
-        >
-          <Play className="w-4 h-4" />
-          Start Exercise
-        </button>
-      </div>
     </div>
   );
 
@@ -577,7 +336,7 @@ export default function WritingExercise() {
             <span className="font-semibold text-foreground">Letter Tracing</span>
           </div>
           <div className="text-sm text-muted-foreground font-medium bg-muted px-3 py-1 rounded-full">
-            {difficultyConfirmed ? `Letter ${currentIndex + 1} of ${prompts.length}` : 'Select Difficulty'}
+            {`Letter ${currentIndex + 1} of ${prompts.length || EXERCISE_LENGTH}`}
           </div>
         </div>
       </header>
@@ -586,21 +345,13 @@ export default function WritingExercise() {
       <div className="w-full h-2 bg-muted">
         <div
           className="h-full gradient-primary transition-all duration-500 ease-out rounded-r-full"
-          style={{ width: `${difficultyConfirmed ? progress : 0}%` }}
+          style={{ width: `${progress}%` }}
         />
       </div>
 
       {/* Main */}
       <main className="max-w-3xl mx-auto px-6 py-10">
-        {configLoading ? (
-          <div className="flex items-center justify-center py-12">
-            <span className="loading loading-spinner loading-md text-primary" />
-          </div>
-        ) : !difficultyConfirmed ? (
-          difficultySelector
-        ) : (
-          exerciseContent
-        )}
+        {exerciseContent}
       </main>
     </div>
   );

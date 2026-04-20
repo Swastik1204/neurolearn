@@ -31,16 +31,3 @@ export function verifyMLSecret(req) {
   const secret = req.headers['x-ml-secret'];
   return secret && secret === process.env.ML_WEBHOOK_SECRET;
 }
-
-/**
- * Write an audit log entry.
- */
-export async function auditLog(action, { requestedBy, studentId, metadata = {} }) {
-  await adminDb.collection('auditLog').add({
-    action,
-    requestedBy,
-    studentId,
-    metadata,
-    timestamp: new Date(),
-  });
-}

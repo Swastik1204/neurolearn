@@ -75,12 +75,14 @@ export default function AnnotatedSampleModal({ sample, analysisResult, onClose, 
 
   const scores = analysisResult?.scores || {};
   const indicators = analysisResult?.indicators || {};
+  const letterSpecific = analysisResult?.letterSpecific || analysisResult?.letter_specific || {};
+  const geminiInterpretation = analysisResult?.geminiInterpretation || letterSpecific?.interpretation || '';
 
   const scoreData = [
     { name: 'Letter Form', score: scores.letterFormScore || 0 },
     { name: 'Spacing', score: scores.spacingScore || 0 },
     { name: 'Baseline', score: scores.baselineScore || 0 },
-    { name: 'Reversals', score: 100 - (scores.reversalScore || 0) }, // Invert for display
+    { name: 'Reversal', score: scores.reversalScore || 0 },
   ];
 
   const reversalCount = indicators.reversals?.length || 0;
@@ -93,8 +95,8 @@ export default function AnnotatedSampleModal({ sample, analysisResult, onClose, 
         <div className="flex items-center justify-between p-5 border-b border-border sticky top-0 bg-card rounded-t-xl z-10">
           <div>
             <h2 className="font-bold text-lg text-foreground">Handwriting Analysis</h2>
-            {sample.promptWord && (
-              <p className="text-sm text-muted-foreground">Word: "{sample.promptWord}"</p>
+            {sample.promptLetter && (
+              <p className="text-sm text-muted-foreground">Letter: "{sample.promptLetter}"</p>
             )}
           </div>
           <button
@@ -123,6 +125,25 @@ export default function AnnotatedSampleModal({ sample, analysisResult, onClose, 
           {/* Indicator Summary */}
           {analysisResult && (
             <>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="rounded-lg border border-border p-3 bg-base-100">
+                  <div className="text-xs text-muted-foreground">Letter Form</div>
+                  <div className="text-lg font-bold text-foreground">{Math.round(scores.letterFormScore || 0)}/100</div>
+                </div>
+                <div className="rounded-lg border border-border p-3 bg-base-100">
+                  <div className="text-xs text-muted-foreground">Spacing</div>
+                  <div className="text-lg font-bold text-foreground">{Math.round(scores.spacingScore || 0)}/100</div>
+                </div>
+                <div className="rounded-lg border border-border p-3 bg-base-100">
+                  <div className="text-xs text-muted-foreground">Baseline</div>
+                  <div className="text-lg font-bold text-foreground">{Math.round(scores.baselineScore || 0)}/100</div>
+                </div>
+                <div className="rounded-lg border border-border p-3 bg-base-100">
+                  <div className="text-xs text-muted-foreground">Reversal Score</div>
+                  <div className="text-lg font-bold text-foreground">{Math.round(scores.reversalScore || 0)}/100</div>
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div className={`p-4 rounded-lg flex items-center gap-3 ${
                   reversalCount > 0 ? 'bg-destructive/5 border border-destructive/20' : 'bg-success/5 border border-success/20'
@@ -159,15 +180,21 @@ export default function AnnotatedSampleModal({ sample, analysisResult, onClose, 
               </div>
 
               {/* AI Interpretation */}
-              {analysisResult.geminiInterpretation && (
+              {geminiInterpretation && (
                 <div className="p-4 bg-primary/5 border border-primary/20 rounded-xl">
                   <h4 className="font-bold text-sm text-primary mb-2 flex items-center gap-2">
                     <Star className="w-4 h-4 fill-primary" />
                     AI Interpretation
                   </h4>
                   <p className="text-sm text-foreground italic leading-relaxed">
-                    "{analysisResult.geminiInterpretation}"
+                    "{geminiInterpretation}"
                   </p>
+                </div>
+              )}
+
+              {!geminiInterpretation && (
+                <div className="p-4 bg-muted rounded-xl text-sm text-muted-foreground">
+                  Gemini interpretation is not available yet for this sample.
                 </div>
               )}
 
@@ -190,10 +217,10 @@ export default function AnnotatedSampleModal({ sample, analysisResult, onClose, 
               <div className="flex items-center justify-between p-4 rounded-lg border border-border">
                 <span className="text-sm font-medium text-foreground">Overall Dyslexia Risk</span>
                 <span className={`text-lg font-bold ${
-                  (scores.overallDyslexiaRisk || 0) > 0.6 ? 'text-destructive' :
-                  (scores.overallDyslexiaRisk || 0) > 0.3 ? 'text-warning' : 'text-success'
+                  (scores.overallRisk || 0) > 0.6 ? 'text-destructive' :
+                  (scores.overallRisk || 0) > 0.3 ? 'text-warning' : 'text-success'
                 }`}>
-                  {Math.round((scores.overallDyslexiaRisk || 0) * 100)}%
+                  {Math.round((scores.overallRisk || 0) * 100)}%
                 </span>
               </div>
             </>

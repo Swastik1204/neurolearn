@@ -7,7 +7,6 @@
  * Shows top, mid, and baseline guides.
  */
 export function drawBaselineGrid(ctx, width, height) {
-  const lineCount = 3;
   const topLine = height * 0.2;
   const midLine = height * 0.5;
   const baseLine = height * 0.8;

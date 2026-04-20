@@ -1,7 +1,7 @@
 import { setCors } from '../lib/cors.js';
 import { adminDb } from '../lib/firebaseAdmin.js';
-import { verifyToken, getUserRole, auditLog } from '../lib/auth.js';
-import { generateWeeklyReport, ensureSessionsCollectionBackend } from '../lib/genAI.js';
+import { verifyToken, getUserRole } from '../lib/auth.js';
+import { generateWeeklyReport } from '../lib/genAI.js';
 import { FieldValue } from 'firebase-admin/firestore';
 
 function toIsoDate(value) {
@@ -46,10 +46,15 @@ export default async function handler(req, res) {
     const { studentId, weekStartDate, forceRegenerate = false } = req.body;
     if (!studentId) return res.status(400).json({ error: 'Missing studentId' });
 
-    // Fetch student info
-    const studentSnap = await adminDb.collection('students')
-      .where('uid', '==', studentId).get();
-    const studentName = studentSnap.docs[0]?.data()?.displayName || 'your child';
+    const guardianSnap = await adminDb.collection('users').doc(decoded.uid).get();
+    const guardianData = guardianSnap.exists ? (guardianSnap.data() || {}) : {};
+    const linkedStudentIds = guardianData.linkedStudentIds || [];
+    if (!linkedStudentIds.includes(studentId)) {
+      return res.status(403).json({ error: 'Guardian not linked to this student' });
+    }
+
+    const studentSnap = await adminDb.collection('users').doc(studentId).get();
+    const studentName = studentSnap.exists ? (studentSnap.data()?.displayName || 'your child') : 'your child';
 
     // Fetch last 7 days of analysis results
     const weekStart = weekStartDate ? new Date(weekStartDate) : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -79,8 +84,6 @@ export default async function handler(req, res) {
       .filter((r) => asDate(r.analyzedAt) >= weekStart)
       .sort((a, b) => asDate(b.analyzedAt) - asDate(a.analyzedAt));
 
-    // Ensure sessions collection exists then fetch sessions
-    await ensureSessionsCollectionBackend(adminDb);
     const sessionsSnap = await adminDb.collection('sessions')
       .where('studentId', '==', studentId)
       .get();
@@ -89,17 +92,9 @@ export default async function handler(req, res) {
       .filter((s) => asDate(s.startedAt) >= weekStart)
       .sort((a, b) => asDate(b.startedAt) - asDate(a.startedAt));
 
-    // Fetch behaviour snapshot
-    const behavSnap = await adminDb.collection('behaviourSnapshots')
-      .where('studentId', '==', studentId)
-      .get();
-    const behaviour = behavSnap.docs
-      .map((d) => d.data())
-      .sort((a, b) => String(b.weekStartDate || '').localeCompare(String(a.weekStartDate || '')))[0] || {};
-
     // Prepare data for Gemini
     const avgScore = analysisResults.length > 0 
-      ? analysisResults.reduce((sum, r) => sum + (100 - (r.scores?.overallDyslexiaRisk || 0) * 100), 0) / analysisResults.length 
+      ? analysisResults.reduce((sum, r) => sum + (100 - (r.scores?.overallRisk || 0) * 100), 0) / analysisResults.length 
       : 80; // default passing if no data
       
     const topIndicators = analysisResults
@@ -109,24 +104,11 @@ export default async function handler(req, res) {
       }) || [])
       .slice(0, 3);
 
-    const emotionCounts = analysisResults.reduce((acc, r) => {
-      const key = (r.emotionAtSubmit || '').toLowerCase();
-      if (!key) return acc;
-      acc[key] = (acc[key] || 0) + 1;
-      return acc;
-    }, {});
-    const emotionSummary = Object.entries(emotionCounts)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 3)
-      .map(([emotion, count]) => `${emotion} (${count})`)
-      .join(', ');
-
     const weekData = {
       childName: studentName,
       sessionsCompleted: sessions.length,
       avgScore: Math.round(avgScore),
       topIndicators: topIndicators.length > 0 ? topIndicators : null,
-      emotionSummary: emotionSummary || null,
     };
 
     let narrative;
@@ -151,25 +133,19 @@ export default async function handler(req, res) {
       studentId,
       guardianId: decoded.uid,
       generatedAt: FieldValue.serverTimestamp(),
-      generatedAtISO: new Date().toISOString(),
       weekStartDate: weekKey,
       narrativeSummary: narrative,
-      handwritingHighlights: analysisResults.length > 0
-        ? `${analysisResults.length} samples analyzed this week.`
-        : 'No new samples this week.',
-      recommendedActivities: activities,
-      pdfUrl: '',
     };
     const reportRef = await adminDb.collection('reports').add(reportPayload);
     const savedReport = await reportRef.get();
 
-    await auditLog('generate_report', {
-      requestedBy: decoded.uid,
-      studentId,
-      metadata: { reportId: reportRef.id },
-    });
+    const response = mapReportDoc(savedReport);
+    response.handwritingHighlights = analysisResults.length > 0
+      ? `${analysisResults.length} samples analyzed this week.`
+      : 'No new samples this week.';
+    response.recommendedActivities = activities;
 
-    return res.status(200).json(mapReportDoc(savedReport));
+    return res.status(200).json(response);
   } catch (error) {
     console.error('generate-report error:', error.message);
     return res.status(500).json({ error: 'Internal server error' });

@@ -29,7 +29,7 @@ export default function ReportCard({ report, studentName, studentId, onReportGen
       });
 
       if (onReportGenerated) onReportGenerated(res.data);
-    } catch (err) {
+    } catch {
       setError('Could not generate report. Please try again later.');
     } finally {
       setGenerating(false);

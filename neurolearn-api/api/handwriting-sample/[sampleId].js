@@ -1,6 +1,6 @@
 import { setCors } from '../../lib/cors.js';
 import { adminDb } from '../../lib/firebaseAdmin.js';
-import { verifyToken, getUserRole, auditLog } from '../../lib/auth.js';
+import { verifyToken, getUserRole } from '../../lib/auth.js';
 
 export default async function handler(req, res) {
   setCors(req, res);
@@ -35,21 +35,8 @@ export default async function handler(req, res) {
     if (role === 'guardian') {
       const guardianDoc = await adminDb.collection('users').doc(decoded.uid).get();
       const guardianData = guardianDoc.exists ? guardianDoc.data() || {} : {};
-      const linkedStudentIds = [
-        ...(guardianData.linkedStudentIds || []),
-        ...(guardianData.studentIds || []),
-      ];
-
-      // Allow either direct uid match or students doc-id match.
-      let authorized = linkedStudentIds.includes(studentId);
-      if (!authorized) {
-        const studentByUidSnap = await adminDb.collection('students')
-          .where('uid', '==', studentId)
-          .limit(1)
-          .get();
-        const studentDocId = studentByUidSnap.docs[0]?.id;
-        authorized = !!studentDocId && linkedStudentIds.includes(studentDocId);
-      }
+      const linkedStudentIds = guardianData.linkedStudentIds || [];
+      const authorized = linkedStudentIds.includes(studentId);
 
       if (!authorized) {
         return res.status(403).json({ error: 'Guardian not linked to this student' });
@@ -64,15 +51,6 @@ export default async function handler(req, res) {
     analysisSnap.docs.forEach((d) => batch.delete(d.ref));
     batch.delete(sampleRef);
     await batch.commit();
-
-    await auditLog('delete_handwriting_sample', {
-      requestedBy: decoded.uid,
-      studentId,
-      metadata: {
-        sampleId,
-        deletedAnalysisCount: analysisSnap.docs.length,
-      },
-    });
 
     return res.status(200).json({
       deleted: true,

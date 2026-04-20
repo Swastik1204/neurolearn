@@ -1,7 +1,6 @@
 import { setCors } from '../../lib/cors.js';
 import { adminDb } from '../../lib/firebaseAdmin.js';
 import { verifyToken, getUserRole } from '../../lib/auth.js';
-import { ensureSessionsCollectionBackend } from '../../lib/genAI.js';
 
 export default async function handler(req, res) {
   setCors(req, res);
@@ -27,36 +26,15 @@ export default async function handler(req, res) {
     if (role === 'guardian') {
       const userDoc = await adminDb.collection('users').doc(decoded.uid).get();
       const userData = userDoc.data() || {};
-      const linkedIds = [
-        ...(userData.linkedStudentIds || []),
-        ...(userData.studentIds || []),
-      ];
-
-      // Support either student uid or student document id.
-      let authorized = linkedIds.includes(studentId);
-      if (!authorized) {
-        const studentByUidSnap = await adminDb.collection('students')
-          .where('uid', '==', studentId)
-          .limit(1)
-          .get();
-        const studentDocId = studentByUidSnap.docs[0]?.id;
-        authorized = !!studentDocId && linkedIds.includes(studentDocId);
-      }
+      const linkedIds = userData.linkedStudentIds || [];
+      const authorized = linkedIds.includes(studentId);
 
       if (!authorized) {
         return res.status(403).json({ error: 'Not authorized for this student' });
       }
     }
 
-    // Fetch behaviour snapshots (last 4 weeks)
-    const behavSnap = await adminDb.collection('behaviourSnapshots')
-      .where('studentId', '==', studentId)
-      .orderBy('weekStartDate', 'desc')
-      .limit(4)
-      .get();
-    const behaviourSnapshots = behavSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-
-    // Fetch analysis results (last 10) - handle both analyzedAt and createdAt
+    // Fetch analysis results (last 10)
     const analysisSnap = await adminDb.collection('analysisResults')
       .where('studentId', '==', studentId)
       .limit(20) // Get more to sort manually if needed
@@ -64,13 +42,11 @@ export default async function handler(req, res) {
     
     let analysisResults = analysisSnap.docs.map(d => ({ id: d.id, ...d.data() }));
     
-    // Defensive normalization
     analysisResults = analysisResults.map(r => ({
       ...r,
-      analyzedAt: r.analyzedAt || r.createdAt,
       scores: {
         ...r.scores,
-        overallDyslexiaRisk: r.scores?.overallDyslexiaRisk ?? r.scores?.overallRisk ?? r.overallRisk ?? 0
+        overallRisk: r.scores?.overallRisk ?? r.overallRisk ?? 0
       }
     }));
 
@@ -83,8 +59,6 @@ export default async function handler(req, res) {
 
     analysisResults = analysisResults.slice(0, 10);
 
-    // Ensure sessions collection exists then fetch recent sessions
-    await ensureSessionsCollectionBackend(adminDb);
     const sessionSnap = await adminDb.collection('sessions')
       .where('studentId', '==', studentId)
       .orderBy('startedAt', 'desc')
@@ -104,7 +78,7 @@ export default async function handler(req, res) {
       const date = result.analyzedAt?.toDate ? result.analyzedAt.toDate() : new Date();
       const dateKey = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
       if (!acc[dateKey]) acc[dateKey] = { sum: 0, count: 0, timestamp: date.getTime() };
-      const risk = result.scores?.overallDyslexiaRisk ?? 0;
+      const risk = result.scores?.overallRisk ?? 0;
       acc[dateKey].sum += risk;
       acc[dateKey].count += 1;
       return acc;
@@ -120,7 +94,6 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       studentId,
-      behaviourSnapshots,
       analysisResults,
       sessions,
       stats: {

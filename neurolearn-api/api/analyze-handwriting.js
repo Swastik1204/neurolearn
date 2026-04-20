@@ -1,6 +1,6 @@
 import { setCors } from '../lib/cors.js';
 import { adminDb } from '../lib/firebaseAdmin.js';
-import { verifyToken, auditLog } from '../lib/auth.js';
+import { verifyToken } from '../lib/auth.js';
 import { FieldValue } from 'firebase-admin/firestore';
 
 function withTimeout(ms) {
@@ -14,9 +14,11 @@ function withTimeout(ms) {
 
 function normalizeScores(scores = {}, overallRisk = 0) {
   return {
-    ...scores,
-    overallRisk: scores?.overallRisk ?? overallRisk,
-    overallDyslexiaRisk: scores?.overallDyslexiaRisk ?? scores?.overallRisk ?? overallRisk,
+    letterFormScore: Number(scores?.letterFormScore ?? 0),
+    spacingScore: Number(scores?.spacingScore ?? 0),
+    baselineScore: Number(scores?.baselineScore ?? 0),
+    reversalScore: Number(scores?.reversalScore ?? 0),
+    overallRisk: Number(scores?.overallRisk ?? overallRisk ?? 0),
   };
 }
 
@@ -39,8 +41,6 @@ export default async function handler(req, res) {
       imageBase64,
       studentId,
       strokeMetadata,
-      emotionAtSubmit,
-      emotionConfidence,
     } = req.body;
 
     if (!sampleId || !imageBase64 || !studentId) {
@@ -51,8 +51,6 @@ export default async function handler(req, res) {
     await adminDb.collection('handwritingSamples').doc(sampleId).update({
       analysisStatus: 'processing',
       imageBase64,
-      emotionAtSubmit: emotionAtSubmit || null,
-      emotionConfidence: typeof emotionConfidence === 'number' ? emotionConfidence : null,
     });
 
     const configuredUrl = process.env.ML_SERVICE_URL?.trim();
@@ -104,12 +102,6 @@ export default async function handler(req, res) {
         analysisStatus: 'pending',
       });
 
-      await auditLog('analyze_handwriting_pending', {
-        requestedBy: decoded.uid,
-        studentId,
-        metadata: { sampleId, mlError: mlError?.message || 'unknown' },
-      });
-
       return res.status(202).json({
         sampleId,
         risk_level: 'pending',
@@ -124,15 +116,10 @@ export default async function handler(req, res) {
       studentId,
       letter: mlData.letter || strokeMetadata?.currentLetter || '',
       analyzedAt: FieldValue.serverTimestamp(),
-      createdAt: new Date().toISOString(),
       scores: normalizedScores,
       indicators: mlData.indicators || { reversals: [] },
       letterSpecific: mlData.letter_specific || {},
-      overallRisk: mlData.overall_risk || normalizedScores.overallRisk || 0,
       riskLevel: mlData.risk_level || 'low',
-      rawFeatures: mlData.rawFeatures || {},
-      emotionAtSubmit: emotionAtSubmit || null,
-      emotionConfidence: typeof emotionConfidence === 'number' ? emotionConfidence : null,
       geminiInterpretation: null,
     };
 
@@ -142,16 +129,12 @@ export default async function handler(req, res) {
       analysisStatus: 'complete',
       analysisResult: {
         resultId: resultRef.id,
-        overallRisk: analysisDoc.overallRisk,
+        scores: analysisDoc.scores,
+        indicators: analysisDoc.indicators,
+        letterSpecific: analysisDoc.letterSpecific,
         riskLevel: analysisDoc.riskLevel,
+        geminiInterpretation: analysisDoc.geminiInterpretation,
       },
-    });
-
-    // Audit log (no PII)
-    await auditLog('analyze_handwriting', {
-      requestedBy: decoded.uid,
-      studentId,
-      metadata: { sampleId, resultId: resultRef.id, mlUrl: usedMlUrl },
     });
 
     return res.status(200).json({
@@ -161,10 +144,7 @@ export default async function handler(req, res) {
       scores: normalizedScores,
       indicators: analysisDoc.indicators,
       letter_specific: analysisDoc.letterSpecific,
-      overall_risk: analysisDoc.overallRisk,
       risk_level: analysisDoc.riskLevel,
-      emotion_at_submit: analysisDoc.emotionAtSubmit,
-      emotion_confidence: analysisDoc.emotionConfidence,
       result_id: resultRef.id,
     });
   } catch (error) {

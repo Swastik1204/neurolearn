@@ -1,15 +1,5 @@
 import { Image as ImageIcon, Trash2 } from 'lucide-react';
 
-const EMOTION_EMOJI = {
-  happy: '🙂',
-  sad: '😢',
-  angry: '😠',
-  fearful: '😨',
-  disgusted: '🤢',
-  surprised: '😮',
-  neutral: '😐',
-};
-
 export default function SampleGrid({ samples = [], onSampleClick, onDeleteClick }) {
   if (samples.length === 0) {
     return (
@@ -33,13 +23,13 @@ export default function SampleGrid({ samples = [], onSampleClick, onDeleteClick 
             type="button"
             onClick={() => onSampleClick(sample)}
             className="absolute inset-0 z-0"
-            aria-label={`View analysis for ${sample.promptWord || 'exercise'}`}
+            aria-label={`View analysis for ${sample.promptLetter || 'exercise'}`}
           />
 
           <div className="w-full h-full relative z-0 pointer-events-none" aria-hidden="true">
             <img
               src={sample.imageBase64 || sample.imageUrl}
-              alt={`Handwriting sample: ${sample.promptWord || 'writing'}`}
+              alt={`Handwriting sample: ${sample.promptLetter || 'writing'}`}
               className="w-full h-full object-contain p-2"
               loading="lazy"
             />
@@ -83,15 +73,23 @@ export default function SampleGrid({ samples = [], onSampleClick, onDeleteClick 
           </div>
 
           {/* Word label */}
-          {sample.promptWord && (
-            <div className="absolute bottom-2 left-2 text-xs font-medium text-muted-foreground bg-white/80 px-2 py-0.5 rounded pointer-events-none z-20">
-              "{sample.promptWord}"
+          {sample.promptLetter && (
+            <div className={`absolute text-xs font-medium text-muted-foreground bg-white/80 px-2 py-0.5 rounded pointer-events-none z-20 ${
+              sample.analysisResult?.scores ? 'top-2 left-10' : 'bottom-2 left-2'
+            }`}>
+              "{sample.promptLetter}"
             </div>
           )}
 
-          {sample.emotionAtSubmit && (
-            <div className="absolute bottom-2 right-2 text-xs font-medium text-foreground bg-white/85 px-2 py-0.5 rounded pointer-events-none z-20">
-              {EMOTION_EMOJI[sample.emotionAtSubmit] || '😐'} {sample.emotionAtSubmit}
+          {sample.analysisResult?.scores && (
+            <div className="absolute bottom-2 left-2 right-2 pointer-events-none z-20">
+              <div className="bg-white/90 border border-border rounded-lg px-2 py-1 text-[10px] font-medium text-foreground shadow-sm backdrop-blur-sm">
+                <div className="flex flex-wrap gap-x-2 gap-y-1">
+                  <span>LF {Math.round(sample.analysisResult.scores.letterFormScore || 0)}</span>
+                  <span>R {Math.round(sample.analysisResult.scores.reversalScore || 0)}</span>
+                  <span>Risk {Math.round((sample.analysisResult.scores.overallRisk ?? 0) * 100)}%</span>
+                </div>
+              </div>
             </div>
           )}
         </div>

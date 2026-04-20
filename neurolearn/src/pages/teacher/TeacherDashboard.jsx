@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { signOut } from 'firebase/auth';
 import { auth, db } from '@/services/firebase';
-import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
+import { query, collection, where, getDocs } from 'firebase/firestore';
 import useCurrentUser from '@/hooks/useCurrentUser';
 import AssignExercise from './AssignExercise';
 import RiskDistribution from '@/components/charts/RiskDistribution';
@@ -31,17 +31,14 @@ export default function TeacherDashboard() {
 
     const fetchStudents = async () => {
       try {
-        const q = query(
-          collection(db, 'students'),
-          where('teacherId', '==', user.uid)
-        );
-        const snap = await getDocs(q);
+        setLoading(true);
+        const studentsQuery = query(collection(db, 'users'), where('role', '==', 'student'));
+        const studentsSnap = await getDocs(studentsQuery);
         const studentsData = [];
 
-        for (const doc of snap.docs) {
-          const student = { id: doc.id, ...doc.data() };
+        for (const studentDoc of studentsSnap.docs) {
+          const student = { id: studentDoc.id, ...studentDoc.data(), uid: studentDoc.id };
 
-          // Fetch latest analysis result for risk level
           try {
             const analysisQ = query(
               collection(db, 'analysisResults'),
@@ -52,13 +49,13 @@ export default function TeacherDashboard() {
               .map(d => d.data())
               .sort((a, b) => (b.analyzedAt?.toMillis?.() || 0) - (a.analyzedAt?.toMillis?.() || 0));
             const latestAnalysis = sortedAnalysis[0];
-            student.riskScore = latestAnalysis?.scores?.overallDyslexiaRisk || 0;
+            student.riskScore = latestAnalysis?.scores?.overallRisk || 0;
             student.lastAnalysis = latestAnalysis;
-          } catch (e) {
+          } catch (error) {
+            console.debug('Could not load latest analysis for student:', error?.message || error);
             student.riskScore = 0;
           }
 
-          // Fetch session count this week
           try {
             const sessQ = query(
               collection(db, 'sessions'),
@@ -67,7 +64,8 @@ export default function TeacherDashboard() {
             const sessSnap = await getDocs(sessQ);
             student.sessionCount = sessSnap.size;
             student.lastSessionDate = sessSnap.docs[0]?.data()?.startedAt;
-          } catch (e) {
+          } catch (error) {
+            console.debug('Could not load sessions for student:', error?.message || error);
             student.sessionCount = 0;
           }
 
@@ -86,7 +84,7 @@ export default function TeacherDashboard() {
 
     fetchStudents();
     return () => { cancelled = true; };
-  }, [user]);
+  }, [user?.uid, studentIds]);
 
   // Risk distribution for chart
   const riskDistribution = [
@@ -268,10 +266,8 @@ export default function TeacherDashboard() {
 
       {showBrowsePanel && (
         <StudentListPanel
-          role="teacher"
           linkedStudentIds={studentIds || []}
           onClose={() => setShowBrowsePanel(false)}
-          onSuccess={() => window.location.reload()}
         />
       )}
     </div>

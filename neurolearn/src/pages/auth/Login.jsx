@@ -2,8 +2,7 @@ import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { signInWithEmailAndPassword, signInWithPopup, signInWithRedirect } from 'firebase/auth';
 import { auth, googleProvider, db } from '@/services/firebase';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
-import useAuthStore from '@/store/authStore';
+import { doc, getDoc } from 'firebase/firestore';
 import { Eye, EyeOff, BookOpen, LogIn } from 'lucide-react';
 
 export default function Login() {

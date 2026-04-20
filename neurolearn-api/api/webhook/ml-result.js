@@ -23,9 +23,8 @@ export default async function handler(req, res) {
       scores, 
       indicators, 
       letter_specific, 
-      overall_risk, 
       risk_level,
-      rawFeatures 
+      geminiInterpretation,
     } = req.body;
 
     if (!sample_id || !scores) {
@@ -35,8 +34,11 @@ export default async function handler(req, res) {
     // Write analysis result
     // Standardize fields for Guardian Dashboard
     const normalizedScores = {
-      ...scores,
-      overallDyslexiaRisk: scores?.overallDyslexiaRisk || scores?.overallRisk || overall_risk || 0,
+      letterFormScore: Number(scores?.letterFormScore ?? 0),
+      spacingScore: Number(scores?.spacingScore ?? 0),
+      baselineScore: Number(scores?.baselineScore ?? 0),
+      reversalScore: Number(scores?.reversalScore ?? 0),
+      overallRisk: Number(scores?.overallRisk ?? 0),
     };
 
     const resultData = {
@@ -46,12 +48,9 @@ export default async function handler(req, res) {
       scores: normalizedScores,
       letterSpecific: letter_specific || {},
       indicators: indicators || { reversals: [] },
-      overallRisk: overall_risk || 0,
       riskLevel: risk_level || 'low',
       analyzedAt: FieldValue.serverTimestamp(),
-      createdAt: new Date().toISOString(), // Fallback for old code
-      rawFeatures: rawFeatures || {},
-      geminiInterpretation: null // filled next
+      geminiInterpretation: geminiInterpretation || null,
     };
 
     const resultRef = await adminDb.collection('analysisResults').add(resultData);
@@ -61,8 +60,11 @@ export default async function handler(req, res) {
       analysisStatus: 'complete',
       analysisResult: {
         resultId: resultRef.id,
-        overallRisk: overall_risk || 0,
-        riskLevel: risk_level || 'low'
+        scores: normalizedScores,
+        indicators: indicators || { reversals: [] },
+        letterSpecific: letter_specific || {},
+        riskLevel: risk_level || 'low',
+        geminiInterpretation: geminiInterpretation || null,
       },
     });
 

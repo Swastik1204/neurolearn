@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
+import { collection, query, where, orderBy, getDocs } from 'firebase/firestore';
 import { db } from '@/services/firebase';
 import SampleGrid from '@/components/handwriting/SampleGrid';
 import AnnotatedSampleModal from '@/components/handwriting/AnnotatedSampleModal';
@@ -19,15 +19,34 @@ export default function HandwritingTab({ studentId }) {
 
     const fetch = async () => {
       try {
-        const q = query(
+        const samplesQuery = query(
           collection(db, 'handwritingSamples'),
           where('studentId', '==', studentId),
           orderBy('capturedAt', 'desc'),
-          limit(20)
         );
-        const snap = await getDocs(q);
+        const [samplesSnap, analysisSnap] = await Promise.all([
+          getDocs(samplesQuery),
+          getDocs(query(
+            collection(db, 'analysisResults'),
+            where('studentId', '==', studentId),
+            orderBy('analyzedAt', 'desc')
+          )),
+        ]);
+
+        const analysisBySampleId = new Map();
+        analysisSnap.docs.forEach((docSnap) => {
+          const data = docSnap.data();
+          if (data?.sampleId) {
+            analysisBySampleId.set(data.sampleId, { id: docSnap.id, ...data });
+          }
+        });
+
         if (!cancelled) {
-          setSamples(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+          setSamples(samplesSnap.docs.map((d) => ({
+            id: d.id,
+            ...d.data(),
+            analysisResult: analysisBySampleId.get(d.id) || null,
+          })));
           setLoading(false);
         }
       } catch (err) {
@@ -42,15 +61,16 @@ export default function HandwritingTab({ studentId }) {
 
   const handleSampleClick = async (sample) => {
     setSelectedSample(sample);
-    setAnalysisResult(null);
+    setAnalysisResult(sample.analysisResult || null);
 
     // Try to fetch analysis result if it's complete
-    if (sample.analysisStatus === 'complete') {
+    if (sample.analysisResult) {
+      setAnalysisResult(sample.analysisResult);
+    } else if (sample.analysisStatus === 'complete') {
       try {
         const q = query(
           collection(db, 'analysisResults'),
           where('sampleId', '==', sample.id),
-          limit(1)
         );
         const snap = await getDocs(q);
         if (snap.docs.length > 0) {
@@ -72,7 +92,6 @@ export default function HandwritingTab({ studentId }) {
           const q = query(
             collection(db, 'analysisResults'),
             where('sampleId', '==', sample.id),
-            limit(1)
           );
           const snap = await getDocs(q);
           if (snap.docs.length > 0) {
@@ -94,7 +113,6 @@ export default function HandwritingTab({ studentId }) {
       const q = query(
         collection(db, 'analysisResults'),
         where('sampleId', '==', selectedSample.id),
-        limit(1)
       );
       const snap = await getDocs(q);
       if (snap.docs.length > 0) {
@@ -153,7 +171,7 @@ export default function HandwritingTab({ studentId }) {
           <div className="modal-box">
             <h3 className="font-bold text-lg">Delete Exercise?</h3>
             <p className="py-3 text-sm text-muted-foreground">
-              This will delete the sample and its analysis for "{deleteTarget.promptWord || 'exercise'}".
+              This will delete the sample and its analysis for "{deleteTarget.promptLetter || 'exercise'}".
             </p>
             <div className="modal-action">
               <button

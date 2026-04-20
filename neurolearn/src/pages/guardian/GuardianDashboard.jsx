@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { signOut } from 'firebase/auth';
 import { auth, db } from '@/services/firebase';
-import { collection, query, where, getDocs, doc as firestoreDoc, getDoc } from 'firebase/firestore';
+import { doc as firestoreDoc, getDoc } from 'firebase/firestore';
 import useCurrentUser from '@/hooks/useCurrentUser';
 import OverviewTab from './OverviewTab';
 import HandwritingTab from './HandwritingTab';
@@ -50,26 +50,14 @@ export default function GuardianDashboard() {
 
     const fetchStudents = async () => {
       try {
+        setLoading(true);
         const studentsData = [];
         for (const sid of studentIds) {
-          // studentIds contains doc IDs from /students collection
-          const studentDocRef = firestoreDoc(db, 'students', sid);
+          const studentDocRef = firestoreDoc(db, 'users', sid);
           const studentSnap = await getDoc(studentDocRef);
           if (studentSnap.exists()) {
             const data = { id: studentSnap.id, ...studentSnap.data() };
-
-            // Enrich with email from /users collection
-            if (data.uid) {
-              try {
-                const userSnap = await getDoc(firestoreDoc(db, 'users', data.uid));
-                if (userSnap.exists()) {
-                  const userData = userSnap.data();
-                  data.email = userData.email || '';
-                  data.displayName = data.displayName || userData.displayName || 'Student';
-                }
-              } catch (_) {}
-            }
-
+            data.uid = data.uid || studentSnap.id;
             studentsData.push(data);
           }
         }
@@ -319,10 +307,8 @@ export default function GuardianDashboard() {
 
       {showBrowsePanel && (
         <StudentListPanel
-          role="guardian"
           linkedStudentIds={studentIds || []}
           onClose={() => setShowBrowsePanel(false)}
-          onSuccess={() => window.location.reload()}
         />
       )}
     </div>

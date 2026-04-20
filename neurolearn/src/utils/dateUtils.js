@@ -3,7 +3,6 @@ import {
   startOfWeek,
   endOfWeek,
   subWeeks,
-  isWithinInterval,
   parseISO,
   differenceInDays,
 } from 'date-fns';

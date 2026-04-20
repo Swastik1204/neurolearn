@@ -1,14 +1,16 @@
 import { useState, useEffect } from 'react';
 import {
   collection, query, where, getDocs,
-  doc, setDoc, updateDoc, arrayUnion,
+  doc, updateDoc, arrayUnion,
 } from 'firebase/firestore';
 import { db, auth } from '@/services/firebase';
+import useAuthStore from '@/store/authStore';
 import {
   X, UserPlus, Loader2, CheckCircle, Search, Users, User,
 } from 'lucide-react';
 
-export default function StudentListPanel({ role, linkedStudentIds = [], onSuccess, onClose }) {
+export default function StudentListPanel({ linkedStudentIds = [], onSuccess, onClose }) {
+  const addStudentId = useAuthStore((state) => state.addStudentId);
   const [allStudents, setAllStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [connectingId, setConnectingId] = useState(null);
@@ -32,38 +34,9 @@ export default function StudentListPanel({ role, linkedStudentIds = [], onSucces
     fetchAllStudents();
   }, []);
 
-  // Check if student is already linked
-  // linkedStudentIds contains doc IDs from /students collection, but we also
-  // need to check against the fetched student doc UIDs from /students
-  const [linkedUids, setLinkedUids] = useState([]);
-
-  useEffect(() => {
-    if (!linkedStudentIds?.length) return;
-    const fetchLinkedUids = async () => {
-      try {
-        const uids = [];
-        for (const docId of linkedStudentIds) {
-          const studentsRef = collection(db, 'students');
-          const q = query(studentsRef);
-          const snap = await getDocs(q);
-          snap.docs.forEach((d) => {
-            if (linkedStudentIds.includes(d.id)) {
-              uids.push(d.data().uid);
-            }
-          });
-          break; // only need one query
-        }
-        setLinkedUids(uids);
-      } catch (err) {
-        console.error('Error fetching linked UIDs:', err);
-      }
-    };
-    fetchLinkedUids();
-  }, [linkedStudentIds]);
-
   const isLinked = (student) => {
     const uid = student.uid || student.id;
-    return linkedStudentIds.includes(uid) || linkedUids.includes(uid);
+    return linkedStudentIds.includes(uid);
   };
 
   // Connect to a student
@@ -72,56 +45,21 @@ export default function StudentListPanel({ role, linkedStudentIds = [], onSucces
     setConnectingId(studentUid);
     try {
       if (!auth.currentUser) throw new Error('You must be logged in to connect.');
-
-      const studentName = student.displayName || 'Student';
       const currentUid = auth.currentUser.uid;
 
-      // 1. Check/Create student profile in /students collection
-      const studentsRef = collection(db, 'students');
-      const studentQuery = query(studentsRef, where('uid', '==', studentUid));
-      const studentSnapshot = await getDocs(studentQuery);
-
-      let studentDocId;
-      if (studentSnapshot.empty) {
-        const newStudentDoc = doc(studentsRef);
-        studentDocId = newStudentDoc.id;
-        await setDoc(newStudentDoc, {
-          uid: studentUid,
-          displayName: studentName,
-          guardianId: role === 'guardian' ? currentUid : '',
-          teacherId: role === 'teacher' ? currentUid : '',
-          createdAt: new Date().toISOString(),
-        });
-      } else {
-        studentDocId = studentSnapshot.docs[0].id;
-        const updateData = {};
-        if (role === 'guardian') updateData.guardianId = currentUid;
-        if (role === 'teacher') updateData.teacherId = currentUid;
-        if (Object.keys(updateData).length > 0) {
-          await updateDoc(doc(db, 'students', studentDocId), updateData);
-        }
-      }
-
-      // 2. Update the Guardian/Teacher's /users document
+      // 1. Update the Guardian/Teacher's /users document
       const userRef = doc(db, 'users', currentUid);
       await updateDoc(userRef, {
-        linkedStudentIds: arrayUnion(studentDocId),
+        linkedStudentIds: arrayUnion(studentUid),
       });
 
-      // 3. Update the Student's /users record with the link back
-      const studentUserRef = doc(db, 'users', studentUid);
-      const studentUpdate = {};
-      if (role === 'guardian') studentUpdate.guardianId = currentUid;
-      if (role === 'teacher') studentUpdate.teacherId = currentUid;
-      if (Object.keys(studentUpdate).length > 0) {
-        await updateDoc(studentUserRef, studentUpdate);
-      }
+      addStudentId(studentUid);
 
       setSuccessId(studentUid);
 
       // Delay then trigger success callback
       setTimeout(() => {
-        if (onSuccess) onSuccess(studentDocId);
+        if (onSuccess) onSuccess(studentUid);
         onClose();
       }, 1500);
     } catch (err) {

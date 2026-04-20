@@ -9,7 +9,11 @@ export default function useAnalysisResults(studentId, maxResults = 10) {
 
   useEffect(() => {
     if (!studentId) {
-      setLoading(false);
+      queueMicrotask(() => {
+        setResults([]);
+        setError(null);
+        setLoading(false);
+      });
       return;
     }
 
@@ -17,6 +21,7 @@ export default function useAnalysisResults(studentId, maxResults = 10) {
 
     const fetchResults = async () => {
       try {
+        setLoading(true);
         const q = query(
           collection(db, 'analysisResults'),
           where('studentId', '==', studentId),

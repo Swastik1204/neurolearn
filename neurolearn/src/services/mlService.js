@@ -8,7 +8,7 @@ const mlService = {
     return false;
   },
 
-  async analyzeHandwriting(canvas) {
+  async analyzeHandwriting() {
     // Always return null — WritingExercise.jsx handles the server fallback
     return null;
   }
