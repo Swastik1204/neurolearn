@@ -1,16 +1,16 @@
 import { useState, useEffect, useRef } from 'react';
 import { signOut } from 'firebase/auth';
-import { auth, db } from '@/services/firebase';
-import { doc as firestoreDoc, getDoc } from 'firebase/firestore';
+import { auth } from '@/services/firebase';
 import useCurrentUser from '@/hooks/useCurrentUser';
+import { getLinkedStudents } from '@/services/api';
 import OverviewTab from './OverviewTab';
 import HandwritingTab from './HandwritingTab';
 import ReportTab from './ReportTab';
 import BehaviourTab from './BehaviourTab';
-import StudentListPanel from '@/components/StudentListPanel';
+import LinkStudentModal from '@/components/LinkStudentModal';
 import {
   BookOpen, LogOut, LayoutDashboard, PenTool, FileText, Activity,
-  ChevronDown, Users, UserPlus, Check,
+  ChevronDown, Users, Check,
 } from 'lucide-react';
 
 const TABS = [
@@ -27,7 +27,7 @@ export default function GuardianDashboard() {
   const [selectedStudentId, setSelectedStudentId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showStudentDropdown, setShowStudentDropdown] = useState(false);
-  const [showBrowsePanel, setShowBrowsePanel] = useState(false);
+  const [showLinkModal, setShowLinkModal] = useState(false);
   const dropdownRef = useRef(null);
 
   // Close dropdown on outside click
@@ -51,26 +51,18 @@ export default function GuardianDashboard() {
     const fetchStudents = async () => {
       try {
         setLoading(true);
-        const studentsData = [];
-        for (const sid of studentIds) {
-          const studentDocRef = firestoreDoc(db, 'users', sid);
-          const studentSnap = await getDoc(studentDocRef);
-          if (studentSnap.exists()) {
-            const data = { id: studentSnap.id, ...studentSnap.data() };
-            data.uid = data.uid || studentSnap.id;
-            studentsData.push(data);
-          }
-        }
+        const response = await getLinkedStudents();
+        const studentsData = (response.data?.students || []).map((student) => ({
+          ...student,
+          uid: student.id,
+        }));
 
-        if (studentsData.length === 0) {
-          setStudents(studentIds.map((sid) => ({ id: sid, uid: sid, displayName: 'Student' })));
-        } else {
-          setStudents(studentsData);
-        }
-
+        setStudents(studentsData);
         setSelectedStudentId(studentsData[0]?.uid || studentIds[0]);
       } catch (err) {
         console.error('Error loading students:', err.message);
+        setStudents(studentIds.map((sid) => ({ id: sid, uid: sid, displayName: 'Student' })));
+        setSelectedStudentId(studentIds[0]);
       } finally {
         setLoading(false);
       }
@@ -177,12 +169,12 @@ export default function GuardianDashboard() {
                     <button
                       onClick={() => {
                         setShowStudentDropdown(false);
-                        setShowBrowsePanel(true);
+                        setShowLinkModal(true);
                       }}
                       className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium text-primary hover:bg-primary/10 transition-all"
                     >
-                      <UserPlus className="w-4 h-4" />
-                      Browse All Students
+                      <Users className="w-4 h-4" />
+                      Link a Student
                     </button>
                   </div>
                 </div>
@@ -282,11 +274,11 @@ export default function GuardianDashboard() {
             <h2 className="text-xl font-semibold text-foreground mb-2">No students linked</h2>
             <p className="text-muted-foreground mb-6">Browse available students and connect to view their progress.</p>
             <button
-              onClick={() => setShowBrowsePanel(true)}
+              onClick={() => setShowLinkModal(true)}
               className="inline-flex items-center gap-2 px-6 py-3 rounded-xl gradient-primary text-white font-medium hover:shadow-lg transition-all shadow-md group"
             >
-              <UserPlus className="w-5 h-5 group-hover:scale-110 transition-transform" />
-              Browse Students
+              <Users className="w-5 h-5 group-hover:scale-110 transition-transform" />
+              Link a Student
             </button>
           </div>
         ) : (
@@ -305,10 +297,10 @@ export default function GuardianDashboard() {
         )}
       </main>
 
-      {showBrowsePanel && (
-        <StudentListPanel
-          linkedStudentIds={studentIds || []}
-          onClose={() => setShowBrowsePanel(false)}
+      {showLinkModal && (
+        <LinkStudentModal
+          onClose={() => setShowLinkModal(false)}
+          onSuccess={() => setShowLinkModal(false)}
         />
       )}
     </div>

@@ -1,126 +1,32 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, orderBy, getDocs } from 'firebase/firestore';
-import { db } from '@/services/firebase';
 import SampleGrid from '@/components/handwriting/SampleGrid';
 import AnnotatedSampleModal from '@/components/handwriting/AnnotatedSampleModal';
 import { deleteHandwritingExercise } from '@/services/api';
+import useStudentData from '@/hooks/useStudentData';
 
 export default function HandwritingTab({ studentId }) {
-  const [samples, setSamples] = useState([]);
+  const { handwritingSamples: samples = [], analysisResults = [], loading, refresh } = useStudentData(studentId);
   const [selectedSample, setSelectedSample] = useState(null);
   const [analysisResult, setAnalysisResult] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
-    if (!studentId) return;
-    let cancelled = false;
-
-    const fetch = async () => {
-      try {
-        const samplesQuery = query(
-          collection(db, 'handwritingSamples'),
-          where('studentId', '==', studentId),
-          orderBy('capturedAt', 'desc'),
-        );
-        const [samplesSnap, analysisSnap] = await Promise.all([
-          getDocs(samplesQuery),
-          getDocs(query(
-            collection(db, 'analysisResults'),
-            where('studentId', '==', studentId),
-            orderBy('analyzedAt', 'desc')
-          )),
-        ]);
-
-        const analysisBySampleId = new Map();
-        analysisSnap.docs.forEach((docSnap) => {
-          const data = docSnap.data();
-          if (data?.sampleId) {
-            analysisBySampleId.set(data.sampleId, { id: docSnap.id, ...data });
-          }
-        });
-
-        if (!cancelled) {
-          setSamples(samplesSnap.docs.map((d) => ({
-            id: d.id,
-            ...d.data(),
-            analysisResult: analysisBySampleId.get(d.id) || null,
-          })));
-          setLoading(false);
-        }
-      } catch (err) {
-        console.error('Error loading samples:', err.message);
-        if (!cancelled) setLoading(false);
-      }
-    };
-
-    fetch();
-    return () => { cancelled = true; };
-  }, [studentId]);
+    if (!samples.length) return;
+    setSelectedSample((current) => {
+      if (!current) return null;
+      return samples.find((sample) => sample.id === current.id) || null;
+    });
+  }, [samples]);
 
   const handleSampleClick = async (sample) => {
     setSelectedSample(sample);
-    setAnalysisResult(sample.analysisResult || null);
-
-    // Try to fetch analysis result if it's complete
-    if (sample.analysisResult) {
-      setAnalysisResult(sample.analysisResult);
-    } else if (sample.analysisStatus === 'complete') {
-      try {
-        const q = query(
-          collection(db, 'analysisResults'),
-          where('sampleId', '==', sample.id),
-        );
-        const snap = await getDocs(q);
-        if (snap.docs.length > 0) {
-          setAnalysisResult(snap.docs[0].data());
-        }
-      } catch (err) {
-        console.error('Error loading analysis:', err.message);
-      }
-    } else if (sample.analysisStatus === 'processing') {
-      // Poll for analysis result if still processing
-      const maxRetries = 5;
-      let retries = 0;
-      const pollInterval = setInterval(async () => {
-        if (retries >= maxRetries) {
-          clearInterval(pollInterval);
-          return;
-        }
-        try {
-          const q = query(
-            collection(db, 'analysisResults'),
-            where('sampleId', '==', sample.id),
-          );
-          const snap = await getDocs(q);
-          if (snap.docs.length > 0) {
-            setAnalysisResult(snap.docs[0].data());
-            clearInterval(pollInterval);
-          }
-          retries++;
-        } catch (err) {
-          console.error('Error polling analysis:', err.message);
-          retries++;
-        }
-      }, 2000);
-    }
+    setAnalysisResult(sample.analysisResult || analysisResults.find((result) => result.sampleId === sample.id) || null);
   };
 
   const handleRetryAnalysis = async () => {
     if (!selectedSample) return;
-    try {
-      const q = query(
-        collection(db, 'analysisResults'),
-        where('sampleId', '==', selectedSample.id),
-      );
-      const snap = await getDocs(q);
-      if (snap.docs.length > 0) {
-        setAnalysisResult(snap.docs[0].data());
-      }
-    } catch (err) {
-      console.error('Error retrying analysis:', err.message);
-    }
+    await refresh();
   };
 
   const handleDeleteConfirm = async () => {
@@ -128,12 +34,12 @@ export default function HandwritingTab({ studentId }) {
     setDeleting(true);
     try {
       await deleteHandwritingExercise(deleteTarget.id);
-      setSamples((prev) => prev.filter((s) => s.id !== deleteTarget.id));
       if (selectedSample?.id === deleteTarget.id) {
         setSelectedSample(null);
         setAnalysisResult(null);
       }
       setDeleteTarget(null);
+      refresh();
     } catch (err) {
       console.error('Delete exercise failed:', err.message);
     } finally {

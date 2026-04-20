@@ -1,9 +1,7 @@
 import { useState } from 'react';
-import { 
-  collection, query, where, getDocs,
-  doc, updateDoc, arrayUnion
-} from 'firebase/firestore';
+import { doc, updateDoc, arrayUnion } from 'firebase/firestore';
 import { db, auth } from '@/services/firebase';
+import { searchStudents } from '@/services/api';
 import useAuthStore from '@/store/authStore';
 import { X, UserPlus, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 
@@ -13,6 +11,40 @@ export default function LinkStudentModal({ onSuccess, onClose }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [selectedStudent, setSelectedStudent] = useState(null);
+
+  const normalize = (value = '') => value.trim().toLowerCase();
+
+  const handleSearch = async () => {
+    const term = normalize(email);
+    if (!term) {
+      setSearchResults([]);
+      setError('Enter a student name or email to search.');
+      return;
+    }
+
+    setSearching(true);
+    setError('');
+    setSelectedStudent(null);
+
+    try {
+      const response = await searchStudents(term);
+      const matches = response.data?.results || [];
+
+      setSearchResults(matches);
+      setSelectedStudent(matches[0] || null);
+      if (matches.length === 0) {
+        setError('No student matched that search. Try a different name or email.');
+      }
+    } catch (err) {
+      console.error('Search error:', err);
+      setError('Could not search students right now. Please try again.');
+    } finally {
+      setSearching(false);
+    }
+  };
 
   const handleLink = async (e) => {
     if (e) e.preventDefault();
@@ -21,21 +53,15 @@ export default function LinkStudentModal({ onSuccess, onClose }) {
     setSuccess('');
 
     try {
-      // 1. Search for student by email in /users
-      const usersRef = collection(db, 'users');
-      const q = query(usersRef, where('email', '==', email), where('role', '==', 'student'));
-      const querySnapshot = await getDocs(q);
-
-      if (querySnapshot.empty) {
-        throw new Error('No student account found with that email. Please ensure the student has already signed up.');
+      if (!selectedStudent) {
+        throw new Error('Search for a student first, then link the matching result.');
       }
 
-      const studentDoc = querySnapshot.docs[0];
-      const studentData = studentDoc.data();
-      const studentUid = studentDoc.id;
+      const studentUid = selectedStudent.id;
+      const studentData = selectedStudent;
       const studentName = studentData.displayName || 'Student';
 
-      // 2. Update the Guardian/Teacher's /users document
+      // Update the Guardian/Teacher's /users document
       const userRef = doc(db, 'users', auth.currentUser.uid);
       await updateDoc(userRef, {
         linkedStudentIds: arrayUnion(studentUid)
@@ -79,8 +105,7 @@ export default function LinkStudentModal({ onSuccess, onClose }) {
         {/* Form Body */}
         <form onSubmit={handleLink} className="p-6 space-y-4">
           <p className="text-sm text-muted-foreground leading-relaxed">
-            Link a student's account to view their progress and reports. 
-            Enter the email address the student used to sign up for NeuroLearn.
+            Search for a student by name or email, then link the matching account.
           </p>
 
           {error && (
@@ -99,20 +124,48 @@ export default function LinkStudentModal({ onSuccess, onClose }) {
 
           <div className="space-y-1.5">
             <label htmlFor="student-email" className="text-xs font-semibold text-muted-foreground uppercase tracking-wider ml-1">
-              Student's Email Address
+              Search Student
             </label>
             <input
               id="student-email"
-              type="email"
+              type="text"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="student@example.com"
+              placeholder="Type a name or email"
               className="w-full px-4 py-3 rounded-xl border border-input bg-white text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all shadow-sm"
               autoFocus
               disabled={loading || !!success}
             />
           </div>
+
+          <button
+            type="button"
+            onClick={handleSearch}
+            disabled={loading || searching || !!success}
+            className="w-full px-4 py-3 rounded-xl border border-border text-foreground font-medium hover:bg-muted transition-all disabled:opacity-50"
+          >
+            {searching ? 'Searching...' : 'Search'}
+          </button>
+
+          {searchResults.length > 0 && (
+            <div className="space-y-2">
+              {searchResults.slice(0, 5).map((student) => (
+                <button
+                  key={student.id}
+                  type="button"
+                  onClick={() => {
+                    setEmail(student.email || student.displayName || '');
+                    setSelectedStudent(student);
+                  }}
+                  className="w-full text-left rounded-xl border border-border bg-muted/30 px-4 py-3 hover:bg-primary/5 transition-all"
+                >
+                  <div className="font-medium text-foreground">{student.displayName || 'Student'}</div>
+                  <div className="text-xs text-muted-foreground">{student.email}</div>
+                </button>
+              ))}
+            </div>
+          )}
 
           <div className="pt-2 flex gap-3">
             <button
@@ -125,7 +178,7 @@ export default function LinkStudentModal({ onSuccess, onClose }) {
             </button>
             <button
               type="submit"
-              disabled={loading || !!success}
+              disabled={loading || !!success || searchResults.length === 0}
               className="flex-1 px-4 py-3 rounded-xl gradient-primary text-white font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-md hover:opacity-90"
             >
               {loading ? (

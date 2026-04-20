@@ -2,6 +2,22 @@ import { setCors } from '../../lib/cors.js';
 import { adminDb } from '../../lib/firebaseAdmin.js';
 import { verifyToken, getUserRole } from '../../lib/auth.js';
 
+function asDate(value) {
+  if (!value) return new Date(0);
+  if (value?.toDate) return value.toDate();
+  return new Date(value);
+}
+
+function mapReportDoc(doc) {
+  const data = doc.data() || {};
+  return {
+    id: doc.id,
+    reportId: doc.id,
+    ...data,
+    generatedAtISO: data.generatedAtISO || (data.generatedAt ? asDate(data.generatedAt).toISOString() : null),
+  };
+}
+
 export default async function handler(req, res) {
   setCors(req, res);
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -66,6 +82,35 @@ export default async function handler(req, res) {
       .get();
     const sessions = sessionSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
+    const reportSnap = await adminDb.collection('reports')
+      .where('studentId', '==', studentId)
+      .get();
+    const reports = reportSnap.docs
+      .map(mapReportDoc)
+      .filter((report) => !role || report.guardianId === decoded.uid || role === 'teacher')
+      .sort((a, b) => asDate(b.generatedAtISO || b.generatedAt) - asDate(a.generatedAtISO || a.generatedAt))
+      .slice(0, 10);
+
+    const sampleSnap = await adminDb.collection('handwritingSamples')
+      .where('studentId', '==', studentId)
+      .get();
+    const handwritingSamples = sampleSnap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+
+    const analysisBySampleId = analysisResults.reduce((acc, result) => {
+      if (result.sampleId) {
+        acc[result.sampleId] = result;
+      }
+      return acc;
+    }, {});
+
+    const handwritingSamplesWithAnalysis = handwritingSamples
+      .map((sample) => ({
+        ...sample,
+        analysisResult: sample.analysisResult || analysisBySampleId[sample.id] || null,
+      }))
+      .sort((a, b) => asDate(b.capturedAt) - asDate(a.capturedAt))
+      .slice(0, 20);
+
     // Aggregate stats for dashboard
     const avgFormScore = analysisResults.length > 0
       ? analysisResults.reduce((sum, r) => sum + (r.scores?.letterFormScore || 0), 0) / analysisResults.length
@@ -96,10 +141,14 @@ export default async function handler(req, res) {
       studentId,
       analysisResults,
       sessions,
+      reports,
+      handwritingSamples: handwritingSamplesWithAnalysis,
       stats: {
         consistencyScore: Math.round(avgFormScore),
         totalReversals,
         sessionsCompleted: sessions.length,
+        analysisResultsCount: analysisResults.length,
+        reportsCount: reports.length,
         trendData,
       }
     });

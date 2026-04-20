@@ -48,4 +48,10 @@ export const getStudentSummary = (studentId) =>
 export const deleteUser = (uid) =>
   api.delete(`/api/user/${uid}`);
 
+export const searchStudents = (query) =>
+  api.get('/api/search-students', { params: { q: query } });
+
+export const getLinkedStudents = () =>
+  api.get('/api/linked-students');
+
 export default api;

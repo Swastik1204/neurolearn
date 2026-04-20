@@ -1,72 +1,19 @@
-import { useState, useEffect } from 'react';
-import { collection, query, where, limit, getDocs } from 'firebase/firestore';
-import { db } from '@/services/firebase';
+import { useState } from 'react';
 import ReportCard from '@/components/dashboard/ReportCard';
-
-function asDate(value) {
-  if (!value) return new Date(0);
-  if (value?.toDate) return value.toDate();
-  return new Date(value);
-}
+import useStudentData from '@/hooks/useStudentData';
 
 export default function ReportTab({ studentId, studentName }) {
-  const [reports, setReports] = useState([]);
-  const [currentReport, setCurrentReport] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [analysisResultsCount, setAnalysisResultsCount] = useState(0);
+  const { reports = [], analysisResults = [], loading } = useStudentData(studentId);
+  const [generatedReports, setGeneratedReports] = useState([]);
+  const [selectedReportId, setSelectedReportId] = useState(null);
 
-  useEffect(() => {
-    if (!studentId) return;
-    let cancelled = false;
-
-    const fetch = async () => {
-      try {
-        const q = query(
-          collection(db, 'reports'),
-          where('studentId', '==', studentId),
-          limit(10)
-        );
-        const snap = await getDocs(q);
-        const data = snap.docs
-          .map((d) => ({ id: d.id, ...d.data() }))
-          .sort((a, b) => {
-            const right = b.generatedAtISO || b.generatedAt;
-            const left = a.generatedAtISO || a.generatedAt;
-            return asDate(right) - asDate(left);
-          });
-
-        // Also fetch analysis results count for the min-3 gate
-        const analysisQ = query(
-          collection(db, 'analysisResults'),
-          where('studentId', '==', studentId),
-          limit(100)
-        );
-        const analysisSnap = await getDocs(analysisQ);
-        let nextCount = analysisSnap.size;
-
-        if (!cancelled) {
-          setReports(data);
-          setCurrentReport(data[0] || null);
-          setAnalysisResultsCount(nextCount);
-          setLoading(false);
-        }
-      } catch (err) {
-        console.error('Error loading reports:', err.message);
-        if (!cancelled) setLoading(false);
-      }
-    };
-
-    fetch();
-    return () => { cancelled = true; };
-  }, [studentId]);
+  const visibleReports = [...generatedReports, ...reports];
+  const currentReport = visibleReports.find((report) => report.id === selectedReportId) || visibleReports[0] || null;
 
   const handleReportGenerated = (newReport) => {
     if (!newReport) return;
-    setCurrentReport(newReport);
-    setReports((prev) => {
-      const withoutCurrent = prev.filter((r) => r.id !== newReport.id);
-      return [newReport, ...withoutCurrent];
-    });
+    setGeneratedReports((prev) => [newReport, ...prev.filter((report) => report.id !== newReport.id)]);
+    setSelectedReportId(newReport.id);
   };
 
   if (loading) {
@@ -85,18 +32,18 @@ export default function ReportTab({ studentId, studentName }) {
         studentName={studentName}
         studentId={studentId}
         onReportGenerated={handleReportGenerated}
-        analysisResultsCount={analysisResultsCount}
+        analysisResultsCount={analysisResults.length}
       />
 
       {/* Past Reports */}
-      {reports.length > 1 && (
+      {visibleReports.length > 1 && (
         <div>
           <h3 className="font-semibold text-foreground mb-3">Past Reports</h3>
           <div className="space-y-2">
-            {reports.slice(1).map((report) => (
+            {visibleReports.slice(1).map((report) => (
               <button
                 key={report.id}
-                onClick={() => setCurrentReport(report)}
+                onClick={() => setSelectedReportId(report.id)}
                 className={`btn btn-block h-auto justify-start text-left normal-case p-4 rounded-lg border transition-all ${
                   currentReport?.id === report.id
                     ? 'border-primary bg-primary/5'
