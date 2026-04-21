@@ -15,6 +15,75 @@ const DEFAULT_LETTERS = ['b', 'd'];
 const DEFAULT_PROMPTS = DEFAULT_LETTERS.map((letter) => letter.toUpperCase());
 const ANALYSIS_TIMEOUT_MS = 2500;
 
+const clamp01 = (value, fallback = 0) => {
+  const num = Number(value);
+  if (Number.isNaN(num)) return fallback;
+  return Math.min(1, Math.max(0, num));
+};
+
+const firstSentence = (text = '') => {
+  const trimmed = String(text || '').trim();
+  if (!trimmed) return '';
+  const match = trimmed.match(/[^.!?]+[.!?]?/);
+  return match?.[0]?.trim() || trimmed;
+};
+
+const normalizeBand = (value = '') => {
+  const raw = String(value || '').toLowerCase();
+  if (raw === 'medium') return 'moderate';
+  if (raw === 'high' || raw === 'moderate' || raw === 'low') return raw;
+  return null;
+};
+
+const bandFromRiskLevel = (riskLevel = '') => {
+  const raw = String(riskLevel || '').toLowerCase();
+  if (raw === 'high') return 'high';
+  if (raw === 'medium') return 'moderate';
+  if (raw === 'low') return 'low';
+  return null;
+};
+
+const pickSessionRiskBand = (bands = []) => {
+  if (!bands.length) return 'moderate';
+  const severity = { low: 1, moderate: 2, high: 3 };
+  const counts = bands.reduce((acc, band) => {
+    acc[band] = (acc[band] || 0) + 1;
+    return acc;
+  }, {});
+
+  return Object.entries(counts).sort((a, b) => {
+    if (b[1] !== a[1]) return b[1] - a[1];
+    return (severity[b[0]] || 0) - (severity[a[0]] || 0);
+  })[0][0];
+};
+
+const profileFromAverages = (averages = {}) => {
+  const profile = {
+    writingMotor: clamp01(averages.writingMotor, 0.5),
+    reversalRisk: clamp01(averages.reversalRisk, 0.5),
+    letterConsistency: clamp01(averages.letterConsistency, 0.5),
+    strokeConfidence: clamp01(averages.strokeConfidence, 0.5),
+  };
+
+  if (
+    profile.reversalRisk >= profile.writingMotor &&
+    profile.reversalRisk >= profile.letterConsistency &&
+    profile.reversalRisk >= profile.strokeConfidence
+  ) {
+    return { ...profile, recommendedPath: 'reversal_reinforcement' };
+  }
+
+  const lowest = [
+    ['writingMotor', profile.writingMotor],
+    ['letterConsistency', profile.letterConsistency],
+    ['strokeConfidence', profile.strokeConfidence],
+  ].sort((a, b) => a[1] - b[1])[0][0];
+
+  if (lowest === 'writingMotor') return { ...profile, recommendedPath: 'motor_development' };
+  if (lowest === 'letterConsistency') return { ...profile, recommendedPath: 'consistency_building' };
+  return { ...profile, recommendedPath: 'confidence_pacing' };
+};
+
 const EMOTION_EMOJI = {
   happy: '🙂',
   sad: '😢',
@@ -87,14 +156,49 @@ export default function WritingExercise() {
   const finishSession = useCallback(async (lastDuration) => {
     try {
       const totalDuration = wordTimings.reduce((sum, w) => sum + w.durationMs, 0) + lastDuration;
+      const letterResults = letterResultsRef.current || [];
+      const profileRows = letterResults
+        .map((result) => result?.cognitiveProfile)
+        .filter(Boolean);
+
+      let sessionProfile = null;
+      if (profileRows.length > 0) {
+        const profileTotals = profileRows.reduce((acc, profile) => {
+          acc.writingMotor += clamp01(profile?.writingMotor, 0.5);
+          acc.reversalRisk += clamp01(profile?.reversalRisk, 0.5);
+          acc.letterConsistency += clamp01(profile?.letterConsistency, 0.5);
+          acc.strokeConfidence += clamp01(profile?.strokeConfidence, 0.5);
+          return acc;
+        }, { writingMotor: 0, reversalRisk: 0, letterConsistency: 0, strokeConfidence: 0 });
+
+        const averages = {
+          writingMotor: profileTotals.writingMotor / profileRows.length,
+          reversalRisk: profileTotals.reversalRisk / profileRows.length,
+          letterConsistency: profileTotals.letterConsistency / profileRows.length,
+          strokeConfidence: profileTotals.strokeConfidence / profileRows.length,
+        };
+        sessionProfile = profileFromAverages(averages);
+      }
+
+      const riskBands = letterResults
+        .map((result) => normalizeBand(result?.cognitiveProfile?.riskBand || bandFromRiskLevel(result?.risk_level)))
+        .filter(Boolean);
+      const sessionRiskBand = pickSessionRiskBand(riskBands);
+      const lettersTraced = letterResults
+        .map((result) => String(result?.letter || '').trim().toUpperCase())
+        .filter(Boolean);
+
       await addDoc(collection(db, 'sessions'), {
         studentId: user?.uid || 'anonymous',
         startedAt: sessionStartedAtRef.current,
         endedAt: new Date(),
         exerciseMode: 'single_letter',
         letterCount: prompts.length,
+        letters: lettersTraced,
         durationMs: totalDuration,
         deviceType: navigator.maxTouchPoints > 0 ? 'touch' : 'mouse',
+        cognitiveProfile: sessionProfile,
+        sessionRiskBand,
       });
     } catch (err) {
       console.error('Session save failed:', err.message);
@@ -159,7 +263,7 @@ export default function WritingExercise() {
         sampleId: sampleDoc.id,
         imageBase64,
         studentId,
-        letter: currentWord.toLowerCase(),
+        letter: currentWord,
         strokeMetadata: mergedStrokeMetadata,
       });
 
@@ -175,15 +279,23 @@ export default function WritingExercise() {
 
       setIsAnalysing(false);
 
+      const apiData = result?.data || result || {};
+      const interpretation = apiData.geminiInterpretation || apiData.gemini_interpretation || '';
+      const cognitiveProfile = apiData.cognitiveProfile || apiData.cognitive_profile || null;
+
       const feedback = result ? {
-        risk_level: result.risk_level,
+        risk_level: apiData.risk_level || 'pending',
         letter: currentWord,
-        note: result.letter_specific?.note || '',
+        note: apiData.letter_specific?.note || '',
+        geminiInterpretation: interpretation,
+        cognitiveProfile,
         timeUp: !!submitMeta.timeUp,
       } : {
         risk_level: 'pending',
         letter: currentWord,
         note: 'Analysis in progress...',
+        geminiInterpretation: '',
+        cognitiveProfile: null,
         timeUp: !!submitMeta.timeUp,
       };
 
@@ -248,6 +360,13 @@ export default function WritingExercise() {
       {/* Feedback Overlay */}
       {letterFeedback && (
         <div className="absolute inset-0 z-40 bg-background/80 backdrop-blur-md flex items-center justify-center rounded-2xl animate-scale-in">
+          {(() => {
+            const profile = letterFeedback.cognitiveProfile || {};
+            const letterAccuracy = Math.round(clamp01(1 - (profile.reversalRisk ?? 0.5), 0.5) * 100);
+            const penConfidence = Math.round(clamp01(profile.strokeConfidence ?? 0.5, 0.5) * 100);
+            const interpretationLine = firstSentence(letterFeedback.geminiInterpretation) || letterFeedback.note || 'Great effort. Keep building skills.';
+
+            return (
           <div className={`p-8 rounded-3xl border-4 text-center max-w-xs w-full shadow-2xl ${
             letterFeedback.risk_level === 'low' ? 'bg-success/10 border-success text-success' :
             letterFeedback.risk_level === 'medium' ? 'bg-warning/10 border-warning text-warning' :
@@ -261,17 +380,38 @@ export default function WritingExercise() {
             </span>
             <h3 className="text-2xl font-black mb-2">
               {letterFeedback.risk_level === 'low' ? `Great ${letterFeedback.letter}!` :
-               letterFeedback.risk_level === 'medium' ? 'Good try!' :
-               letterFeedback.risk_level === 'high' ? `Practice ${letterFeedback.letter} again` : 
+              letterFeedback.risk_level === 'medium' ? 'Building skills!' :
+              letterFeedback.risk_level === 'high' ? `Keep working on ${letterFeedback.letter}` :
                'Working...'}
             </h3>
-            <p className="text-sm font-medium opacity-90">
-              {letterFeedback.risk_level === 'low' ? 'Clean formation.' :
-               letterFeedback.risk_level === 'medium' ? `Watch your ${letterFeedback.letter} shape.` :
-               letterFeedback.note || "Analysis in progress..."
-              }
+            <p className="text-sm font-medium opacity-90 mb-4 line-clamp-2">
+              {interpretationLine}
             </p>
+
+            <div className="space-y-2 text-left">
+              <div>
+                <div className="flex items-center justify-between text-xs font-semibold mb-1">
+                  <span>Letter accuracy</span>
+                  <span>{letterAccuracy}%</span>
+                </div>
+                <div className="w-full h-2 rounded-full bg-white/40 overflow-hidden">
+                  <div className="h-full bg-white" style={{ width: `${letterAccuracy}%` }} />
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between text-xs font-semibold mb-1">
+                  <span>Pen confidence</span>
+                  <span>{penConfidence}%</span>
+                </div>
+                <div className="w-full h-2 rounded-full bg-white/40 overflow-hidden">
+                  <div className="h-full bg-white" style={{ width: `${penConfidence}%` }} />
+                </div>
+              </div>
+            </div>
           </div>
+            );
+          })()}
         </div>
       )}
 

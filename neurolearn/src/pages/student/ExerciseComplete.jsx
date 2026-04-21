@@ -1,49 +1,129 @@
 import { Link, useLocation } from 'react-router-dom';
 import { PartyPopper, Home, RotateCcw, Star } from 'lucide-react';
 
+const clamp01 = (value, fallback = 0) => {
+  const num = Number(value);
+  if (Number.isNaN(num)) return fallback;
+  return Math.min(1, Math.max(0, num));
+};
+
+const firstSentence = (text = '') => {
+  const trimmed = String(text || '').trim();
+  if (!trimmed) return '';
+  const match = trimmed.match(/[^.!?]+[.!?]?/);
+  return match?.[0]?.trim() || trimmed;
+};
+
+const normalizeBand = (riskLevel = '') => {
+  const raw = String(riskLevel || '').toLowerCase();
+  if (raw === 'high') return 'high';
+  if (raw === 'medium') return 'moderate';
+  if (raw === 'low') return 'low';
+  return 'moderate';
+};
+
+const profileFromAverages = (rows = []) => {
+  if (!rows.length) {
+    return {
+      writingMotor: 0.5,
+      reversalRisk: 0.5,
+      letterConsistency: 0.5,
+      strokeConfidence: 0.5,
+      recommendedPath: 'consistency_building',
+    };
+  }
+
+  const totals = rows.reduce((acc, profile) => {
+    acc.writingMotor += clamp01(profile?.writingMotor, 0.5);
+    acc.reversalRisk += clamp01(profile?.reversalRisk, 0.5);
+    acc.letterConsistency += clamp01(profile?.letterConsistency, 0.5);
+    acc.strokeConfidence += clamp01(profile?.strokeConfidence, 0.5);
+    return acc;
+  }, { writingMotor: 0, reversalRisk: 0, letterConsistency: 0, strokeConfidence: 0 });
+
+  const avg = {
+    writingMotor: totals.writingMotor / rows.length,
+    reversalRisk: totals.reversalRisk / rows.length,
+    letterConsistency: totals.letterConsistency / rows.length,
+    strokeConfidence: totals.strokeConfidence / rows.length,
+  };
+
+  if (
+    avg.reversalRisk >= avg.writingMotor &&
+    avg.reversalRisk >= avg.letterConsistency &&
+    avg.reversalRisk >= avg.strokeConfidence
+  ) {
+    return { ...avg, recommendedPath: 'reversal_reinforcement' };
+  }
+
+  const lowest = [
+    ['writingMotor', avg.writingMotor],
+    ['letterConsistency', avg.letterConsistency],
+    ['strokeConfidence', avg.strokeConfidence],
+  ].sort((a, b) => a[1] - b[1])[0][0];
+
+  if (lowest === 'writingMotor') return { ...avg, recommendedPath: 'motor_development' };
+  if (lowest === 'letterConsistency') return { ...avg, recommendedPath: 'consistency_building' };
+  return { ...avg, recommendedPath: 'confidence_pacing' };
+};
+
+const pathSuggestion = {
+  reversal_reinforcement: 'Focus activity: try tracing B and D side by side',
+  motor_development: 'Focus activity: practice slow careful strokes',
+  consistency_building: 'Focus activity: repeat the same letter 5 times in a row',
+  confidence_pacing: 'Focus activity: take your time - there is no rush',
+};
+
+const bandBadge = {
+  low: { label: 'Great progress', className: 'bg-success/10 text-success border-success/20' },
+  moderate: { label: 'Building skills', className: 'bg-warning/10 text-warning border-warning/20' },
+  high: { label: 'Needs support', className: 'bg-destructive/10 text-destructive border-destructive/20' },
+};
+
 export default function ExerciseComplete() {
   const location = useLocation();
-  const { letterResults } = location.state || { letterResults: [] };
+  const { letterResults = [] } = location.state || {};
 
-  const highRiskLetters = letterResults
-    .filter(r => r.risk_level === 'high')
-    .map(r => r.letter);
+  const profileRows = letterResults.map((item) => item?.cognitiveProfile).filter(Boolean);
+  const sessionProfile = profileFromAverages(profileRows);
+  const sessionBand = (() => {
+    if (!letterResults.length) return 'moderate';
+    const severity = { low: 1, moderate: 2, high: 3 };
+    const counts = letterResults.reduce((acc, result) => {
+      const band = normalizeBand(result?.risk_level);
+      acc[band] = (acc[band] || 0) + 1;
+      return acc;
+    }, {});
+    return Object.entries(counts).sort((a, b) => {
+      if (b[1] !== a[1]) return b[1] - a[1];
+      return (severity[b[0]] || 0) - (severity[a[0]] || 0);
+    })[0][0];
+  })();
+  const sessionDate = new Date().toLocaleString();
+
+  const dims = [
+    { label: 'Writing strength', value: Math.round(clamp01(sessionProfile.writingMotor, 0.5) * 100) },
+    { label: 'Letter consistency', value: Math.round(clamp01(sessionProfile.letterConsistency, 0.5) * 100) },
+    { label: 'Pen confidence', value: Math.round(clamp01(sessionProfile.strokeConfidence, 0.5) * 100) },
+    { label: 'Letter accuracy', value: Math.round(clamp01(1 - sessionProfile.reversalRisk, 0.5) * 100) },
+  ];
 
   return (
     <div className="min-h-screen bg-background student-view flex items-center justify-center py-12 px-6">
-      <div className="text-center animate-fade-in max-w-2xl w-full">
+      <div className="text-center animate-fade-in max-w-3xl w-full">
         <div className="w-24 h-24 rounded-full gradient-accent flex items-center justify-center mx-auto mb-6 shadow-xl animate-scale-in">
           <PartyPopper className="w-12 h-12 text-white" />
         </div>
 
-        <h1 className="text-4xl font-bold text-foreground mb-4">
-          Great job! 🎉
-        </h1>
-
-        <p className="text-lg text-muted-foreground mb-10 leading-relaxed max-w-md mx-auto">
-          {letterResults.length > 0 
-            ? `You finished all ${letterResults.length} letters! Here is how you did today.`
-            : "You finished all the letter tracing exercises! You're doing amazing."}
+        <h1 className="text-4xl font-bold text-foreground mb-2">Great job! 🎉</h1>
+        <p className="text-lg text-muted-foreground mb-2 leading-relaxed max-w-xl mx-auto">
+          {`Well done! You traced ${letterResults.length} letters today.`}
         </p>
+        <p className="text-sm text-muted-foreground mb-10">Session completed on {sessionDate}</p>
 
         {letterResults.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-10">
-            {/* Summary Highlights */}
-            {highRiskLetters.length > 0 && (
-              <div className="sm:col-span-2 bg-destructive/5 border border-destructive/20 rounded-2xl p-4 text-left flex items-start gap-3 mb-2">
-                <div className="w-10 h-10 rounded-full bg-destructive/10 flex items-center justify-center flex-shrink-0">
-                  <Star className="w-5 h-5 text-destructive" />
-                </div>
-                <div>
-                  <h4 className="font-bold text-destructive">Focus Letters for Next Time</h4>
-                  <p className="text-sm text-destructive/80">
-                    Practice the letters {highRiskLetters.join(', ')} to boost your skills.
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* Per-letter cards */}
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
             {letterResults.map((res, idx) => (
               <div 
                 key={idx} 
@@ -72,17 +152,48 @@ export default function ExerciseComplete() {
                     res.risk_level === 'high' ? 'text-destructive' :
                     'text-muted-foreground'
                   }`}>
-                    {res.risk_level === 'low' ? 'Excellent' : 
-                     res.risk_level === 'medium' ? 'Good' : 
-                     res.risk_level === 'high' ? 'Needs Focus' : 'Pending'}
+                    {res.risk_level === 'low' ? 'Great form' : 
+                     res.risk_level === 'medium' ? 'Building skills' : 
+                     res.risk_level === 'high' ? 'Practice opportunity' : 'Pending'}
                   </h5>
                   <p className="text-xs text-muted-foreground line-clamp-2 mt-1 italic">
-                    {res.note || (res.risk_level === 'pending' ? 'Analysis processing...' : 'Formation analysis complete.')}
+                    {firstSentence(res.geminiInterpretation || '') || res.note || 'Keep practicing - you are improving.'}
                   </p>
                 </div>
               </div>
             ))}
-          </div>
+            </div>
+
+            <div className="mb-10 p-6 bg-card border border-border rounded-2xl text-left">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-bold text-foreground">Session Profile Summary</h3>
+                <span className={`px-3 py-1 rounded-full border text-xs font-semibold ${bandBadge[sessionBand].className}`}>
+                  {bandBadge[sessionBand].label}
+                </span>
+              </div>
+
+              <div className="space-y-3 mb-5">
+                {dims.map((dim) => (
+                  <div key={dim.label}>
+                    <div className="flex items-center justify-between text-sm font-medium text-foreground mb-1">
+                      <span>{dim.label}</span>
+                      <span>{dim.value}%</span>
+                    </div>
+                    <div className="w-full h-2 rounded-full bg-muted overflow-hidden">
+                      <div className="h-full bg-primary" style={{ width: `${dim.value}%` }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="p-3 rounded-xl bg-primary/5 border border-primary/20">
+                <h4 className="font-semibold text-primary mb-1">Suggested next activity</h4>
+                <p className="text-sm text-foreground/90">
+                  {pathSuggestion[sessionProfile.recommendedPath] || pathSuggestion.consistency_building}
+                </p>
+              </div>
+            </div>
+          </>
         ) : (
           <div className="mb-10 p-6 bg-muted/30 rounded-2xl border-2 border-dashed border-muted shadow-inner animate-slide-up">
             <p className="text-muted-foreground font-medium italic">
@@ -90,6 +201,15 @@ export default function ExerciseComplete() {
             </p>
           </div>
         )}
+
+        <div className="mb-8 p-4 rounded-xl border border-border bg-card text-left">
+          <p className="text-xs text-muted-foreground">
+            NeuroLearn provides screening insights to support learning. It is not a medical assessment.
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            For a full evaluation, speak with an educational specialist.
+          </p>
+        </div>
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
           <Link
