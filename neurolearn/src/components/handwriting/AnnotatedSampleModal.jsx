@@ -1,22 +1,32 @@
 import { useEffect, useRef, useState } from 'react';
-import { X, AlertTriangle, CheckCircle, Star } from 'lucide-react';
-import ScoreBar from '@/components/charts/ScoreBar';
+import { X } from 'lucide-react';
+
+const clamp01 = (value, fallback = 0.5) => {
+  const num = Number(value);
+  if (Number.isNaN(num)) return fallback;
+  return Math.min(1, Math.max(0, num));
+};
+
+const splitInterpretation = (value) => {
+  const text = String(value || '').trim();
+  if (!text) return [];
+  return text
+    .split(/(?<=[.!?])\s+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+};
+
+const profileMetrics = (profile = {}) => [
+  { key: 'writingMotor', label: 'Writing strength', value: Math.round(clamp01(profile.writingMotor) * 100) },
+  { key: 'letterConsistency', label: 'Letter consistency', value: Math.round(clamp01(profile.letterConsistency) * 100) },
+  { key: 'strokeConfidence', label: 'Pen confidence', value: Math.round(clamp01(profile.strokeConfidence) * 100) },
+  { key: 'letterAccuracy', label: 'Letter accuracy', value: Math.round(clamp01(1 - clamp01(profile.reversalRisk)) * 100) },
+];
 
 export default function AnnotatedSampleModal({ sample, analysisResult, onClose, onRetry }) {
   const canvasRef = useRef(null);
   const [imageLoaded, setImageLoaded] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
-
-  const handleRetry = async () => {
-    if (onRetry) {
-      setIsRetrying(true);
-      try {
-        await onRetry();
-      } finally {
-        setIsRetrying(false);
-      }
-    }
-  };
 
   useEffect(() => {
     if (!(sample?.imageBase64 || sample?.imageUrl) || !canvasRef.current) return;
@@ -30,228 +40,122 @@ export default function AnnotatedSampleModal({ sample, analysisResult, onClose, 
       canvas.width = img.width;
       canvas.height = img.height;
       ctx.drawImage(img, 0, 0);
-
-      // Draw annotations if analysis result exists
-      if (analysisResult?.indicators) {
-        const { reversals = [], omissions = [] } = analysisResult.indicators;
-
-        // Draw reversal bounding boxes (red)
-        reversals.forEach(({ position, char }) => {
-          if (position !== undefined) {
-            const x = (position / 10) * img.width;
-            const boxWidth = img.width / 10;
-            ctx.strokeStyle = '#DC3545';
-            ctx.lineWidth = 3;
-            ctx.strokeRect(x, 0, boxWidth, img.height);
-
-            // Label
-            ctx.fillStyle = '#DC3545';
-            ctx.font = 'bold 14px sans-serif';
-            ctx.fillText(`↔ ${char || '?'}`, x + 4, 16);
-          }
-        });
-
-        // Draw omission markers (amber)
-        omissions.forEach(({ position }) => {
-          if (position !== undefined) {
-            const x = (position / 10) * img.width;
-            const boxWidth = img.width / 10;
-            ctx.strokeStyle = '#F4A728';
-            ctx.lineWidth = 2;
-            ctx.setLineDash([4, 4]);
-            ctx.strokeRect(x, 0, boxWidth, img.height);
-            ctx.setLineDash([]);
-          }
-        });
-      }
-
       setImageLoaded(true);
     };
 
     img.src = sample.imageBase64 || sample.imageUrl;
-  }, [sample, analysisResult]);
+  }, [sample]);
 
   if (!sample) return null;
 
   const scores = analysisResult?.scores || {};
-  const indicators = analysisResult?.indicators || {};
-  const letterSpecific = analysisResult?.letterSpecific || analysisResult?.letter_specific || {};
-  const geminiInterpretation = analysisResult?.geminiInterpretation || letterSpecific?.interpretation || '';
+  const profile = analysisResult?.cognitiveProfile || analysisResult?.cognitive_profile || null;
+  const interpretation =
+    analysisResult?.geminiInterpretation ||
+    analysisResult?.gemini_interpretation ||
+    analysisResult?.letterSpecific?.interpretation ||
+    '';
+  const interpretationLines = splitInterpretation(interpretation);
 
-  const scoreData = [
-    { name: 'Letter Form', score: scores.letterFormScore || 0 },
-    { name: 'Spacing', score: scores.spacingScore || 0 },
-    { name: 'Baseline', score: scores.baselineScore || 0 },
-    { name: 'Reversal', score: scores.reversalScore || 0 },
-  ];
-
-  const reversalCount = indicators.reversals?.length || 0;
-  const omissionCount = indicators.omissions?.length || 0;
+  const handleRetry = async () => {
+    if (!onRetry) return;
+    setIsRetrying(true);
+    try {
+      await onRetry();
+    } finally {
+      setIsRetrying(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
       <div className="bg-card rounded-xl shadow-2xl border border-border max-w-2xl w-full max-h-[90vh] overflow-y-auto animate-scale-in">
-        {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-border sticky top-0 bg-card rounded-t-xl z-10">
           <div>
-            <h2 className="font-bold text-lg text-foreground">Handwriting Analysis</h2>
-            {sample.promptLetter && (
-              <p className="text-sm text-muted-foreground">Letter: "{sample.promptLetter}"</p>
-            )}
+            <h2 className="font-bold text-lg text-foreground">Handwriting Sample Detail</h2>
+            <p className="text-sm text-muted-foreground">Letter: {sample.promptLetter || sample.letter || '?'}</p>
           </div>
           <button
+            type="button"
             onClick={onClose}
             className="w-9 h-9 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-all"
+            aria-label="Close"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="p-5 space-y-6">
-          {/* Annotated Image */}
+        <div className="p-5 space-y-5">
           <div className="rounded-xl border border-border overflow-hidden bg-[#FAFAF7]">
-            <canvas
-              ref={canvasRef}
-              className="w-full"
-              style={{ display: imageLoaded ? 'block' : 'none' }}
-            />
+            <canvas ref={canvasRef} className="w-full" style={{ display: imageLoaded ? 'block' : 'none' }} />
             {!imageLoaded && (
-              <div className="h-40 flex items-center justify-center text-muted-foreground">
-                Loading image...
-              </div>
+              <div className="h-40 flex items-center justify-center text-muted-foreground">Loading image...</div>
             )}
           </div>
 
-          {/* Indicator Summary */}
-          {analysisResult && (
+          {analysisResult ? (
             <>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <div className="rounded-lg border border-border p-3 bg-base-100">
                   <div className="text-xs text-muted-foreground">Letter Form</div>
-                  <div className="text-lg font-bold text-foreground">{Math.round(scores.letterFormScore || 0)}/100</div>
+                  <div className="text-lg font-semibold text-foreground">{Math.round(Number(scores.letterFormScore || 0))}/100</div>
                 </div>
                 <div className="rounded-lg border border-border p-3 bg-base-100">
                   <div className="text-xs text-muted-foreground">Spacing</div>
-                  <div className="text-lg font-bold text-foreground">{Math.round(scores.spacingScore || 0)}/100</div>
+                  <div className="text-lg font-semibold text-foreground">{Math.round(Number(scores.spacingScore || 0))}/100</div>
                 </div>
                 <div className="rounded-lg border border-border p-3 bg-base-100">
                   <div className="text-xs text-muted-foreground">Baseline</div>
-                  <div className="text-lg font-bold text-foreground">{Math.round(scores.baselineScore || 0)}/100</div>
+                  <div className="text-lg font-semibold text-foreground">{Math.round(Number(scores.baselineScore || 0))}/100</div>
                 </div>
                 <div className="rounded-lg border border-border p-3 bg-base-100">
-                  <div className="text-xs text-muted-foreground">Reversal Score</div>
-                  <div className="text-lg font-bold text-foreground">{Math.round(scores.reversalScore || 0)}/100</div>
+                  <div className="text-xs text-muted-foreground">Reversal</div>
+                  <div className="text-lg font-semibold text-foreground">{Math.round(Number(scores.reversalScore || 0))}/100</div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className={`p-4 rounded-lg flex items-center gap-3 ${
-                  reversalCount > 0 ? 'bg-destructive/5 border border-destructive/20' : 'bg-success/5 border border-success/20'
-                }`}>
-                  {reversalCount > 0 ? (
-                    <AlertTriangle className="w-5 h-5 text-destructive flex-shrink-0" />
-                  ) : (
-                    <CheckCircle className="w-5 h-5 text-success flex-shrink-0" />
-                  )}
-                  <div>
-                    <div className="font-semibold text-foreground">{reversalCount} reversal{reversalCount !== 1 ? 's' : ''}</div>
-                    <div className="text-xs text-muted-foreground">d/b, p/q type swaps</div>
-                  </div>
-                </div>
-
-                <div className={`p-4 rounded-lg flex items-center gap-3 ${
-                  omissionCount > 0 ? 'bg-warning/5 border border-warning/20' : 'bg-success/5 border border-success/20'
-                }`}>
-                  {omissionCount > 0 ? (
-                    <AlertTriangle className="w-5 h-5 text-warning flex-shrink-0" />
-                  ) : (
-                    <CheckCircle className="w-5 h-5 text-success flex-shrink-0" />
-                  )}
-                  <div>
-                    <div className="font-semibold text-foreground">{omissionCount} omission{omissionCount !== 1 ? 's' : ''}</div>
-                    <div className="text-xs text-muted-foreground">Missing strokes</div>
-                  </div>
-                </div>
+              <div className="rounded-xl border border-border p-4 bg-base-100">
+                <h4 className="font-semibold text-foreground mb-3">Interpretation</h4>
+                {interpretationLines.length > 0 ? (
+                  <p className="text-sm text-foreground leading-relaxed">{interpretationLines[0]}</p>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No interpretation available yet.</p>
+                )}
               </div>
 
-              {/* Score breakdown */}
-              <div className="w-full">
-                <ScoreBar data={scoreData} label="Score Breakdown" color="#5B4FCF" />
-              </div>
-
-              {/* AI Interpretation */}
-              {geminiInterpretation && (
-                <div className="p-4 bg-primary/5 border border-primary/20 rounded-xl">
-                  <h4 className="font-bold text-sm text-primary mb-2 flex items-center gap-2">
-                    <Star className="w-4 h-4 fill-primary" />
-                    AI Interpretation
-                  </h4>
-                  <p className="text-sm text-foreground italic leading-relaxed">
-                    "{geminiInterpretation}"
-                  </p>
+              {profile && (
+                <div className="rounded-xl border border-border p-4 bg-base-100 space-y-3">
+                  <h4 className="font-semibold text-foreground">Profile Snapshot</h4>
+                  {profileMetrics(profile).map((item) => (
+                    <div key={item.key}>
+                      <div className="flex items-center justify-between text-sm text-foreground mb-1">
+                        <span>{item.label}</span>
+                        <span>{item.value}%</span>
+                      </div>
+                      <div className="w-full h-2 rounded-full bg-muted overflow-hidden">
+                        <div className="h-full bg-primary" style={{ width: `${item.value}%` }} />
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
-
-              {!geminiInterpretation && (
-                <div className="p-4 bg-muted rounded-xl text-sm text-muted-foreground">
-                  Gemini interpretation is not available yet for this sample.
-                </div>
-              )}
-
-              {/* Detailed indicators list */}
-              {indicators.reversals?.length > 0 && (
-                <div className="p-4 bg-muted rounded-lg">
-                  <h4 className="font-semibold text-sm mb-2 text-foreground">Reversal Details</h4>
-                  <ul className="space-y-1">
-                    {indicators.reversals.map((r, i) => (
-                      <li key={i} className="text-sm text-muted-foreground flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-destructive flex-shrink-0" />
-                        '{r.char}' reversal detected (confidence: {Math.round((r.confidence || 0) * 100)}%)
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* Risk Score */}
-              <div className="flex items-center justify-between p-4 rounded-lg border border-border">
-                <span className="text-sm font-medium text-foreground">Overall Dyslexia Risk</span>
-                <span className={`text-lg font-bold ${
-                  (scores.overallRisk || 0) > 0.6 ? 'text-destructive' :
-                  (scores.overallRisk || 0) > 0.3 ? 'text-warning' : 'text-success'
-                }`}>
-                  {Math.round((scores.overallRisk || 0) * 100)}%
-                </span>
-              </div>
             </>
-          )}
-
-          {!analysisResult && (
+          ) : (
             <div className="text-center py-6">
               {sample.analysisStatus === 'processing' ? (
                 <div className="flex flex-col items-center gap-3">
-                  <div className="w-8 h-8 border-3 border-primary/30 border-t-primary rounded-full animate-spin" />
+                  <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
                   <p className="text-muted-foreground font-medium">Analysis is processing...</p>
-                  <p className="text-xs text-muted-foreground">This may take a few moments</p>
                   {onRetry && (
                     <button
+                      type="button"
                       onClick={handleRetry}
                       disabled={isRetrying}
-                      className="mt-4 px-3 py-1.5 text-sm font-medium bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
+                      className="btn btn-sm btn-outline"
                     >
                       {isRetrying ? 'Checking...' : 'Check Status'}
                     </button>
                   )}
-                </div>
-              ) : sample.analysisStatus === 'pending' ? (
-                <div className="flex flex-col items-center gap-3">
-                  <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center">
-                    <svg className="w-6 h-6 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  </div>
-                  <p className="text-muted-foreground font-medium">Waiting to analyze...</p>
-                  <p className="text-xs text-muted-foreground">Analysis will start shortly</p>
                 </div>
               ) : (
                 <p className="text-muted-foreground">Analysis not yet available for this sample.</p>

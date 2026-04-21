@@ -1,11 +1,119 @@
 import { setCors } from '../../lib/cors.js';
 import { adminDb } from '../../lib/firebaseAdmin.js';
 import { verifyToken, getUserRole } from '../../lib/auth.js';
+const DEFAULT_PROFILE = {
+  writingMotor: 0.5,
+  reversalRisk: 0.5,
+  letterConsistency: 0.5,
+  strokeConfidence: 0.5,
+  riskBand: 'moderate',
+  recommendedPath: 'consistency_building',
+};
+
+
+const DEFAULT_PROFILE = {
+  writingMotor: 0.5,
+  reversalRisk: 0.5,
+  letterConsistency: 0.5,
+  strokeConfidence: 0.5,
+  riskBand: 'moderate',
+  recommendedPath: 'consistency_building',
+};
 
 function asDate(value) {
   if (!value) return new Date(0);
   if (value?.toDate) return value.toDate();
   return new Date(value);
+}
+
+function clamp01(value, fallback = 0) {
+  const num = Number(value);
+  if (Number.isNaN(num)) return fallback;
+  return Math.min(1, Math.max(0, num));
+}
+
+function normalizeLetter(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '?';
+  return raw[0].toUpperCase();
+}
+
+function profileFromScores(scores = {}) {
+  const letterFormScore = Number(scores?.letterFormScore ?? 0);
+  const spacingScore = Number(scores?.spacingScore ?? 0);
+  const baselineScore = Number(scores?.baselineScore ?? 0);
+  const reversalScore = Number(scores?.reversalScore ?? 0);
+  const overallRisk = clamp01(scores?.overallRisk ?? 0);
+
+  const writingMotor = clamp01((letterFormScore + baselineScore) / 200, 0.5);
+  const reversalRisk = clamp01(reversalScore / 100, 0.5);
+  const letterConsistency = clamp01((spacingScore + baselineScore) / 200, 0.5);
+  const strokeConfidence = 0.5;
+
+  let riskBand = 'low';
+  if (reversalRisk > 0.65 || overallRisk > 0.65) riskBand = 'high';
+  else if (reversalRisk > 0.35 || overallRisk > 0.35) riskBand = 'moderate';
+
+  let recommendedPath = 'consistency_building';
+  if (
+    reversalRisk >= writingMotor &&
+    reversalRisk >= letterConsistency &&
+    reversalRisk >= strokeConfidence
+  ) {
+    recommendedPath = 'reversal_reinforcement';
+  } else {
+    const lowest = [
+      ['writingMotor', writingMotor],
+      ['letterConsistency', letterConsistency],
+      ['strokeConfidence', strokeConfidence],
+    ].sort((a, b) => a[1] - b[1])[0][0];
+
+    if (lowest === 'writingMotor') recommendedPath = 'motor_development';
+    else if (lowest === 'strokeConfidence') recommendedPath = 'confidence_pacing';
+  }
+
+  return {
+    writingMotor,
+    reversalRisk,
+    letterConsistency,
+    strokeConfidence,
+    riskBand,
+    recommendedPath,
+  };
+}
+
+function normalizeProfile(profile = {}, fallbackScores = {}) {
+  if (!profile || typeof profile !== 'object') {
+    return profileFromScores(fallbackScores);
+  }
+
+  return {
+    writingMotor: clamp01(profile?.writingMotor, 0.5),
+    reversalRisk: clamp01(profile?.reversalRisk, 0.5),
+    letterConsistency: clamp01(profile?.letterConsistency, 0.5),
+    strokeConfidence: clamp01(profile?.strokeConfidence, 0.5),
+    riskBand: String(profile?.riskBand || profileFromScores(fallbackScores).riskBand),
+    recommendedPath: String(profile?.recommendedPath || profileFromScores(fallbackScores).recommendedPath),
+  };
+}
+
+function averageProfiles(rows = []) {
+  if (!rows.length) return { ...DEFAULT_PROFILE };
+
+  const totals = rows.reduce((acc, profile) => {
+    acc.writingMotor += clamp01(profile?.writingMotor, 0.5);
+    acc.reversalRisk += clamp01(profile?.reversalRisk, 0.5);
+    acc.letterConsistency += clamp01(profile?.letterConsistency, 0.5);
+    acc.strokeConfidence += clamp01(profile?.strokeConfidence, 0.5);
+    return acc;
+  }, { writingMotor: 0, reversalRisk: 0, letterConsistency: 0, strokeConfidence: 0 });
+
+  return {
+    writingMotor: totals.writingMotor / rows.length,
+    reversalRisk: totals.reversalRisk / rows.length,
+    letterConsistency: totals.letterConsistency / rows.length,
+    strokeConfidence: totals.strokeConfidence / rows.length,
+  };
 }
 
 function mapReportDoc(doc) {
@@ -60,10 +168,14 @@ export default async function handler(req, res) {
     
     analysisResults = analysisResults.map(r => ({
       ...r,
+      letter: normalizeLetter(r.letter),
+      riskLevel: r.riskLevel || 'low',
+      geminiInterpretation: r.geminiInterpretation || null,
       scores: {
         ...r.scores,
         overallRisk: r.scores?.overallRisk ?? r.overallRisk ?? 0
-      }
+      },
+      cognitiveProfile: normalizeProfile(r.cognitiveProfile, r.scores || {}),
     }));
 
     // Sort by date
@@ -80,7 +192,16 @@ export default async function handler(req, res) {
       .orderBy('startedAt', 'desc')
       .limit(20)
       .get();
-    const sessions = sessionSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const sessions = sessionSnap.docs.map(d => {
+      const raw = d.data() || {};
+      return {
+        id: d.id,
+        ...raw,
+        letters: Array.isArray(raw.letters) ? raw.letters.map(normalizeLetter) : [],
+        sessionRiskBand: raw.sessionRiskBand || null,
+        cognitiveProfile: raw.cognitiveProfile ? normalizeProfile(raw.cognitiveProfile) : null,
+      };
+    });
 
     const reportSnap = await adminDb.collection('reports')
       .where('studentId', '==', studentId)
@@ -106,10 +227,99 @@ export default async function handler(req, res) {
     const handwritingSamplesWithAnalysis = handwritingSamples
       .map((sample) => ({
         ...sample,
+        letter: normalizeLetter(sample.letter || sample.promptLetter),
         analysisResult: sample.analysisResult || analysisBySampleId[sample.id] || null,
       }))
       .sort((a, b) => asDate(b.capturedAt) - asDate(a.capturedAt))
       .slice(0, 20);
+
+    const profileTimeline = analysisResults
+      .map((result) => {
+        const analyzedDate = asDate(result.analyzedAt);
+        const profile = normalizeProfile(result.cognitiveProfile, result.scores || {});
+        return {
+          date: analyzedDate.toISOString(),
+          letter: normalizeLetter(result.letter),
+          writingMotor: profile.writingMotor,
+          reversalRisk: profile.reversalRisk,
+          letterConsistency: profile.letterConsistency,
+          strokeConfidence: profile.strokeConfidence,
+          riskLevel: result.riskLevel || 'low',
+          timestamp: analyzedDate.getTime(),
+        };
+      })
+      .sort((a, b) => a.timestamp - b.timestamp);
+
+    const allProfiles = analysisResults.map((result) => normalizeProfile(result.cognitiveProfile, result.scores || {}));
+    const averaged = averageProfiles(allProfiles);
+    const latestProfile = allProfiles[0] || DEFAULT_PROFILE;
+    const overallProfile = {
+      writingMotor: averaged.writingMotor ?? DEFAULT_PROFILE.writingMotor,
+      reversalRisk: averaged.reversalRisk ?? DEFAULT_PROFILE.reversalRisk,
+      letterConsistency: averaged.letterConsistency ?? DEFAULT_PROFILE.letterConsistency,
+      strokeConfidence: averaged.strokeConfidence ?? DEFAULT_PROFILE.strokeConfidence,
+      riskBand: latestProfile.riskBand || DEFAULT_PROFILE.riskBand,
+      recommendedPath: latestProfile.recommendedPath || DEFAULT_PROFILE.recommendedPath,
+    };
+
+    const letterBreakdown = analysisResults.reduce((acc, result) => {
+      const letter = normalizeLetter(result.letter);
+      if (!acc[letter]) {
+        acc[letter] = {
+          count: 0,
+          totals: {
+            letterFormScore: 0,
+            spacingScore: 0,
+            baselineScore: 0,
+            reversalScore: 0,
+            overallRisk: 0,
+            writingMotor: 0,
+            reversalRisk: 0,
+            letterConsistency: 0,
+            strokeConfidence: 0,
+          },
+        };
+      }
+
+      const profile = normalizeProfile(result.cognitiveProfile, result.scores || {});
+      const target = acc[letter];
+      target.count += 1;
+      target.totals.letterFormScore += Number(result.scores?.letterFormScore ?? 0);
+      target.totals.spacingScore += Number(result.scores?.spacingScore ?? 0);
+      target.totals.baselineScore += Number(result.scores?.baselineScore ?? 0);
+      target.totals.reversalScore += Number(result.scores?.reversalScore ?? 0);
+      target.totals.overallRisk += Number(result.scores?.overallRisk ?? 0);
+      target.totals.writingMotor += profile.writingMotor;
+      target.totals.reversalRisk += profile.reversalRisk;
+      target.totals.letterConsistency += profile.letterConsistency;
+      target.totals.strokeConfidence += profile.strokeConfidence;
+      return acc;
+    }, {});
+
+    const reducedLetterBreakdown = Object.fromEntries(
+      Object.entries(letterBreakdown).map(([letter, payload]) => {
+        const count = Math.max(payload.count, 1);
+        return [
+          letter,
+          {
+            count: payload.count,
+            averageScores: {
+              letterFormScore: payload.totals.letterFormScore / count,
+              spacingScore: payload.totals.spacingScore / count,
+              baselineScore: payload.totals.baselineScore / count,
+              reversalScore: payload.totals.reversalScore / count,
+              overallRisk: payload.totals.overallRisk / count,
+            },
+            averageCognitiveProfile: {
+              writingMotor: payload.totals.writingMotor / count,
+              reversalRisk: payload.totals.reversalRisk / count,
+              letterConsistency: payload.totals.letterConsistency / count,
+              strokeConfidence: payload.totals.strokeConfidence / count,
+            },
+          },
+        ];
+      })
+    );
 
     // Aggregate stats for dashboard
     const avgFormScore = analysisResults.length > 0
@@ -143,6 +353,9 @@ export default async function handler(req, res) {
       sessions,
       reports,
       handwritingSamples: handwritingSamplesWithAnalysis,
+      profileTimeline,
+      overallProfile,
+      letterBreakdown: reducedLetterBreakdown,
       stats: {
         consistencyScore: Math.round(avgFormScore),
         totalReversals,

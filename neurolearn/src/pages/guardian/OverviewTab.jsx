@@ -1,107 +1,66 @@
-import { useMemo } from 'react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import useStudentData from '@/hooks/useStudentData';
-import WeeklyScoreCard from '@/components/dashboard/WeeklyScoreCard';
-import TrendLine from '@/components/charts/TrendLine';
-import { PenTool, Target, RotateCcw, TrendingUp } from 'lucide-react';
+import { formatDate } from '@/utils/dateUtils';
 
-/* Demo data removed — using real analysis trends */
+const pathLabel = {
+  reversal_reinforcement: 'Focus path: letter reversal reinforcement',
+  motor_development: 'Focus path: writing motor development',
+  consistency_building: 'Focus path: consistency building',
+  confidence_pacing: 'Focus path: confidence pacing',
+};
+
+const bandBadge = {
+  low: 'badge-success',
+  moderate: 'badge-warning',
+  high: 'badge-error',
+};
+
+const profileColor = {
+  writingMotor: '#2E8B57',
+  letterConsistency: '#1F78D1',
+  strokeConfidence: '#F4A728',
+  reversalRisk: '#DC3545',
+};
+
+const clamp01 = (value, fallback = 0.5) => {
+  const num = Number(value);
+  if (Number.isNaN(num)) return fallback;
+  return Math.min(1, Math.max(0, num));
+};
+
+function weakestDimension(profile = {}) {
+  const dims = [
+    { key: 'writingMotor', label: 'Writing strength', value: clamp01(profile.writingMotor) },
+    { key: 'letterConsistency', label: 'Letter consistency', value: clamp01(profile.letterConsistency) },
+    { key: 'strokeConfidence', label: 'Pen confidence', value: clamp01(profile.strokeConfidence) },
+    { key: 'letterAccuracy', label: 'Letter accuracy', value: clamp01(1 - clamp01(profile.reversalRisk)) },
+  ];
+  return dims.sort((a, b) => a.value - b.value)[0];
+}
+
+function profileBars(profile = {}) {
+  return [
+    { key: 'writingMotor', label: 'Writing strength', value: Math.round(clamp01(profile.writingMotor) * 100) },
+    { key: 'letterConsistency', label: 'Letter consistency', value: Math.round(clamp01(profile.letterConsistency) * 100) },
+    { key: 'strokeConfidence', label: 'Pen confidence', value: Math.round(clamp01(profile.strokeConfidence) * 100) },
+    { key: 'letterAccuracy', label: 'Letter accuracy', value: Math.round(clamp01(1 - clamp01(profile.reversalRisk)) * 100) },
+  ];
+}
 
 export default function OverviewTab({ studentId }) {
-  const { sessions, analysisResults, summary, loading } = useStudentData(studentId);
+  const { sessions = [], summary, loading } = useStudentData(studentId);
 
-  const metrics = useMemo(() => {
-    const latest = analysisResults[0] || null;
-    const previous = analysisResults[1] || null;
-    const latestScores = latest?.scores || {};
-    const previousScores = previous?.scores || {};
-    const latestRisk = latestScores.overallRisk ?? 0;
-    const previousRisk = previousScores.overallRisk ?? latestRisk;
-    const latestLetterForm = latestScores.letterFormScore || 0;
-    const previousLetterForm = previousScores.letterFormScore || latestLetterForm;
-    const latestReversal = latestScores.reversalScore || 0;
-    const previousReversal = previousScores.reversalScore || latestReversal;
-
-    const scoreTrend = (current, prior, invert = false) => {
-      if (typeof prior !== 'number') return 'flat';
-      if (invert) {
-        if (current < prior) return 'up';
-        if (current > prior) return 'down';
-        return 'flat';
-      }
-      if (current > prior) return 'up';
-      if (current < prior) return 'down';
-      return 'flat';
-    };
-
-    return {
-      letterFormScore: Math.round(latestLetterForm),
-      letterFormTrend: scoreTrend(latestLetterForm, previousLetterForm),
-      reversalScore: Math.round(latestReversal),
-      reversalTrend: scoreTrend(latestReversal, previousReversal, true),
-      overallRisk: Math.round((latestRisk || 0) * 100),
-      overallRiskTrend: scoreTrend(latestRisk, previousRisk, true),
-      sessionsCompleted: sessions.length,
-      sessionsTarget: 5,
-      sessionsTrend: sessions.length >= 3 ? 'up' : 'flat',
-      trendLabel: latest ? 'Latest sample' : 'No data',
-    };
-  }, [analysisResults, sessions]);
-
-  const trendData = useMemo(() => {
-    if (summary?.stats?.trendData?.length > 0) {
-      return summary.stats.trendData;
-    }
-    // Build from results if API summary missing
-    return analysisResults
-      .slice()
-      .reverse()
-      .map(r => ({
-        week: r.analyzedAt?.toDate ? r.analyzedAt.toDate().toLocaleDateString() : '',
-        value: r.scores?.overallRisk || 0
-      }));
-  }, [summary, analysisResults]);
-
-  const focusInsights = useMemo(() => {
-    const byLetter = {};
-
-    analysisResults.forEach((result) => {
-      const letter = String(result.letter || '').toLowerCase();
-      if (!letter) return;
-
-      const risk = result.scores?.overallRisk ?? 0;
-      const reversals = result.indicators?.reversals?.length || 0;
-
-      if (!byLetter[letter]) {
-        byLetter[letter] = {
-          letter,
-          totalRisk: 0,
-          count: 0,
-          reversals: 0,
-        };
-      }
-
-      byLetter[letter].totalRisk += risk;
-      byLetter[letter].count += 1;
-      byLetter[letter].reversals += reversals;
-    });
-
-    const ranked = Object.values(byLetter)
-      .map((item) => {
-        return {
-          letter: item.letter,
-          avgRisk: item.count > 0 ? item.totalRisk / item.count : 0,
-          reversals: item.reversals,
-          samples: item.count,
-        };
-      })
-      .sort((a, b) => b.avgRisk - a.avgRisk);
-
-    const focusLetters = ranked
-      .filter((item) => item.avgRisk >= 0.35 || item.reversals > 0)
-      .slice(0, 4);
-
-    return focusLetters.length > 0 ? focusLetters : ranked.slice(0, 3);
-  }, [analysisResults]);
+  const overallProfile = summary?.overallProfile || null;
+  const timeline = (summary?.profileTimeline || []).map((item) => ({
+    ...item,
+    label: formatDate(item.date),
+    writingMotor: clamp01(item.writingMotor),
+    letterConsistency: clamp01(item.letterConsistency),
+    strokeConfidence: clamp01(item.strokeConfidence),
+    reversalRisk: clamp01(item.reversalRisk),
+  }));
+  const letterBreakdown = summary?.letterBreakdown || {};
+  const recentSessions = sessions.slice(0, 5);
 
   if (loading) {
     return (
@@ -113,94 +72,125 @@ export default function OverviewTab({ studentId }) {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Score Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <WeeklyScoreCard
-          title="Letter Form"
-          value={metrics.letterFormScore}
-          unit="/100"
-          trend={metrics.letterFormTrend}
-          trendLabel={metrics.trendLabel}
-          icon={PenTool}
-        />
-        <WeeklyScoreCard
-          title="Reversal Score"
-          value={metrics.reversalScore}
-          unit="/100"
-          trend={metrics.reversalTrend}
-          trendLabel="Lower is better"
-          icon={RotateCcw}
-        />
-        <WeeklyScoreCard
-          title="Overall Risk"
-          value={metrics.overallRisk}
-          unit="%"
-          trend={metrics.overallRiskTrend}
-          trendLabel="Lower is better"
-          icon={TrendingUp}
-        />
-        <WeeklyScoreCard
-          title="Sessions Completed"
-          value={`${metrics.sessionsCompleted}/${metrics.sessionsTarget}`}
-          trend={metrics.sessionsTrend}
-          trendLabel={metrics.sessionsTrend === 'up' ? 'On track' : 'Needs more'}
-          icon={Target}
-        />
-      </div>
+      <div className="card bg-base-100 border border-border shadow-sm">
+        <div className="card-body">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="font-semibold text-foreground">Overall Cognitive Profile</h3>
+            {overallProfile ? (
+              <span className={`badge ${bandBadge[overallProfile.riskBand] || 'badge-warning'} badge-outline`}>
+                {String(overallProfile.riskBand || 'moderate').toUpperCase()}
+              </span>
+            ) : (
+              <span className="badge badge-outline">ANALYSING...</span>
+            )}
+          </div>
 
-      {/* Trend Line */}
-      <div style={{ minHeight: '200px' }}>
-        <TrendLine
-          data={trendData}
-          dataKey="value"
-          label="Overall Dyslexia Risk Score"
-          color="#5B4FCF"
-        />
+          {overallProfile ? (
+            <>
+              <div className="space-y-3 mt-2">
+                {profileBars(overallProfile).map((item) => (
+                  <div key={item.key}>
+                    <div className="flex items-center justify-between text-sm text-foreground mb-1">
+                      <span>{item.label}</span>
+                      <span>{item.value}%</span>
+                    </div>
+                    <div className="w-full h-2 rounded-full bg-muted overflow-hidden">
+                      <div className="h-full bg-primary" style={{ width: `${item.value}%` }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p className="text-sm text-muted-foreground mt-3">
+                {pathLabel[overallProfile.recommendedPath] || pathLabel.consistency_building}
+              </p>
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground mt-2">Analysing recent handwriting samples...</p>
+          )}
+        </div>
       </div>
 
       <div className="card bg-base-100 border border-border shadow-sm">
-        <div className="card-body gap-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h3 className="font-semibold text-foreground">Focus Letter Insights</h3>
-              <p className="text-sm text-muted-foreground">
-                Based on recent analysis results for this selected student.
-              </p>
-            </div>
-          </div>
-
-          {focusInsights.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {focusInsights.map((item) => (
-                <div key={item.letter} className="rounded-lg border border-border p-3 bg-base-100">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-foreground uppercase">{item.letter}</span>
-                    <span className="badge badge-warning">High risk</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Risk {(item.avgRisk * 100).toFixed(0)}% over {item.samples} sample{item.samples === 1 ? '' : 's'}
-                  </p>
-                </div>
-              ))}
+        <div className="card-body">
+          <h3 className="font-semibold text-foreground mb-2">Progress Trend</h3>
+          {timeline.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
+              No sessions recorded yet. Ask the student to complete a writing exercise.
             </div>
           ) : (
-            <div className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
-              No focus letters yet. Keep practicing to generate adaptive recommendations.
+            <div style={{ minHeight: '280px' }}>
+              <ResponsiveContainer width="100%" minHeight={280}>
+                <LineChart data={timeline} margin={{ top: 8, right: 20, left: 0, bottom: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#E2E1D5" />
+                  <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#6B6B80' }} stroke="#E2E1D5" />
+                  <YAxis domain={[0, 1]} tick={{ fontSize: 11, fill: '#6B6B80' }} stroke="#E2E1D5" />
+                  <Tooltip />
+                  <Legend />
+                  <Line type="monotone" dataKey="writingMotor" name="Writing strength" stroke={profileColor.writingMotor} strokeWidth={2} dot={{ r: 3 }} />
+                  <Line type="monotone" dataKey="letterConsistency" name="Letter consistency" stroke={profileColor.letterConsistency} strokeWidth={2} dot={{ r: 3 }} />
+                  <Line type="monotone" dataKey="strokeConfidence" name="Pen confidence" stroke={profileColor.strokeConfidence} strokeWidth={2} dot={{ r: 3 }} />
+                  <Line type="monotone" dataKey="reversalRisk" name="Reversal pressure" stroke={profileColor.reversalRisk} strokeWidth={2} dot={{ r: 3 }} />
+                </LineChart>
+              </ResponsiveContainer>
             </div>
           )}
         </div>
       </div>
 
-      <div className="stats stats-vertical lg:stats-horizontal shadow border border-border w-full bg-base-100">
-        <div className="stat">
-          <div className="stat-title">Total Samples</div>
-          <div className="stat-value text-primary">{analysisResults.length}</div>
-          <div className="stat-desc">Used in current trend</div>
+      <div className="card bg-base-100 border border-border shadow-sm">
+        <div className="card-body">
+          <h3 className="font-semibold text-foreground mb-2">Letter Breakdown</h3>
+          {Object.keys(letterBreakdown).length === 0 ? (
+            <p className="text-sm text-muted-foreground">No letter-specific data yet.</p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {Object.entries(letterBreakdown).map(([letter, payload]) => (
+                <div key={letter} className="rounded-lg border border-border p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-semibold text-foreground">{letter || '?'}</span>
+                    <span className="text-xs text-muted-foreground">{payload.count} sample{payload.count === 1 ? '' : 's'}</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Reversal pressure: {Math.round(clamp01(payload.averageCognitiveProfile?.reversalRisk) * 100)}%
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Letter form: {Math.round(Number(payload.averageScores?.letterFormScore || 0))}/100
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-        <div className="stat">
-          <div className="stat-title">Linked Sessions</div>
-          <div className="stat-value text-accent">{sessions.length}</div>
-          <div className="stat-desc">Recent activity loaded</div>
+      </div>
+
+      <div className="card bg-base-100 border border-border shadow-sm">
+        <div className="card-body">
+          <h3 className="font-semibold text-foreground mb-2">Recent Sessions</h3>
+          {recentSessions.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No recent sessions yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {recentSessions.map((session) => {
+                const started = session.startedAt?.toDate ? session.startedAt.toDate() : new Date(session.startedAt || Date.now());
+                const weak = session.cognitiveProfile ? weakestDimension(session.cognitiveProfile) : null;
+                return (
+                  <div key={session.id} className="rounded-lg border border-border p-3 flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="font-medium text-foreground text-sm">{formatDate(started.toISOString())}</p>
+                      <p className="text-xs text-muted-foreground">Letters: {(session.letters || []).join(', ') || '?'}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs text-muted-foreground">{session.durationMs ? `${Math.round(session.durationMs / 1000)}s` : 'n/a'}</p>
+                      <span className={`badge ${bandBadge[session.sessionRiskBand] || 'badge-ghost'} badge-outline`}>
+                        {(session.sessionRiskBand || 'moderate').toUpperCase()}
+                      </span>
+                      {weak && <p className="text-xs text-muted-foreground mt-1">Weakest: {weak.label}</p>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     </div>

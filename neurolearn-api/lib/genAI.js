@@ -34,20 +34,35 @@ Keep the total response under 150 words.`;
  * @param {object} weekData - { childName, sessionsCompleted, avgScore, topIndicators }
  */
 export async function generateWeeklyReport(weekData) {
-  const { childName, sessionsCompleted, avgScore, topIndicators } = weekData;
+  const {
+    childName,
+    sessionsCompleted,
+    avgScore,
+    topIndicators,
+    strongestMetric,
+    weakestMetric,
+    highestPressureLetters,
+    practicedLetters,
+    recentInterpretations,
+  } = weekData;
   const prompt = `You are a specialist educational psychologist writing a brief weekly
 progress note for a parent of a child with dyslexia.
 Child: ${childName}
 Sessions this week: ${sessionsCompleted}
 Average performance score: ${avgScore}/100
 Key observations: ${topIndicators?.join(', ') || 'General writing practice'}
+Strongest metric: ${strongestMetric ? `${strongestMetric[0]} (${Math.round(strongestMetric[1] * 100)}%)` : 'N/A'}
+Main support area: ${weakestMetric ? `${weakestMetric[0]} (${Math.round(weakestMetric[1] * 100)}%)` : 'N/A'}
+Letters needing support: ${highestPressureLetters?.join(', ') || 'N/A'}
+Letters practiced: ${practicedLetters?.join(', ') || 'N/A'}
+Recent interpretation snippets: ${recentInterpretations?.join(' | ') || 'N/A'}
 
 Write exactly 3 short paragraphs:
 1. What went well this week (encouraging, specific)
 2. One area to gently work on (never alarming, always hopeful)
-3. Two practical activities to try at home
+3. A parent tip paragraph that ends with "Activities:" followed by exactly 3 numbered activities
 
-Rules: warm tone, plain language, no clinical jargon, under 150 words total,
+Rules: warm tone, plain language, no clinical jargon, under 190 words total,
 second person ("Your child...").`;
 
   const result = await model.generateContent(prompt);
