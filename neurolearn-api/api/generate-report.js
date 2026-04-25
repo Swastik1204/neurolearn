@@ -2,138 +2,22 @@ import { setCors } from '../lib/cors.js';
 import { adminDb } from '../lib/firebaseAdmin.js';
 import { verifyToken, getUserRole } from '../lib/auth.js';
 import { generateWeeklyReport } from '../lib/genAI.js';
-import { FieldValue } from 'firebase-admin/firestore';
 
-const DEFAULT_PROFILE = {
-  writingMotor: 0.5,
-  reversalRisk: 0.5,
-  letterConsistency: 0.5,
-  strokeConfidence: 0.5,
-};
-
-function toIsoDate(value) {
-  if (!value) return null;
-  if (typeof value === 'string') return value;
-  if (value?.toDate) return value.toDate().toISOString();
-  if (value instanceof Date) return value.toISOString();
-  return null;
+function clamp01(v, fb = 0) {
+  const n = Number(v);
+  return Number.isNaN(n) ? fb : Math.min(1, Math.max(0, n));
 }
 
-function mapReportDoc(doc) {
-  const data = doc.data() || {};
-  return {
-    id: doc.id,
-    reportId: doc.id,
-    ...data,
-    generatedAtISO: data.generatedAtISO || toIsoDate(data.generatedAt),
-  };
+function normalizeLetter(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  return raw[0].toUpperCase();
 }
 
 function asDate(value) {
   if (!value) return new Date(0);
   if (value?.toDate) return value.toDate();
   return new Date(value);
-}
-
-function clamp01(value, fallback = 0.5) {
-  const num = Number(value);
-  if (Number.isNaN(num)) return fallback;
-  return Math.min(1, Math.max(0, num));
-}
-
-function normalizeProfile(profile = {}) {
-  if (!profile || typeof profile !== 'object') return { ...DEFAULT_PROFILE };
-  return {
-    writingMotor: clamp01(profile.writingMotor),
-    reversalRisk: clamp01(profile.reversalRisk),
-    letterConsistency: clamp01(profile.letterConsistency),
-    strokeConfidence: clamp01(profile.strokeConfidence),
-  };
-}
-
-function normalizeLetter(value) {
-  const raw = String(value || '').trim();
-  if (!raw) return '?';
-  return raw[0].toUpperCase();
-}
-
-function metricScores(profile) {
-  return [
-    ['writing strength', clamp01(profile.writingMotor)],
-    ['letter consistency', clamp01(profile.letterConsistency)],
-    ['pen confidence', clamp01(profile.strokeConfidence)],
-    ['letter accuracy', clamp01(1 - clamp01(profile.reversalRisk))],
-  ];
-}
-
-function getWeakestMetric(profile) {
-  return metricScores(profile).sort((a, b) => a[1] - b[1])[0];
-}
-
-function getStrongestMetric(profile) {
-  return metricScores(profile).sort((a, b) => b[1] - a[1])[0];
-}
-
-function averageProfile(items = []) {
-  if (!items.length) return { ...DEFAULT_PROFILE };
-  const sum = items.reduce((acc, item) => {
-    acc.writingMotor += clamp01(item.writingMotor);
-    acc.reversalRisk += clamp01(item.reversalRisk);
-    acc.letterConsistency += clamp01(item.letterConsistency);
-    acc.strokeConfidence += clamp01(item.strokeConfidence);
-    return acc;
-  }, { writingMotor: 0, reversalRisk: 0, letterConsistency: 0, strokeConfidence: 0 });
-
-  return {
-    writingMotor: sum.writingMotor / items.length,
-    reversalRisk: sum.reversalRisk / items.length,
-    letterConsistency: sum.letterConsistency / items.length,
-    strokeConfidence: sum.strokeConfidence / items.length,
-  };
-}
-
-function extractActivitiesFromNarrative(text = '') {
-  const lines = String(text || '')
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  const list = lines
-    .filter((line) => /^([0-9]+\.|-|\*)\s+/.test(line))
-    .map((line) => line.replace(/^([0-9]+\.|-|\*)\s+/, '').trim())
-    .filter((line) => line.length > 8)
-    .slice(0, 3);
-
-  if (list.length) return list;
-
-  return String(text || '')
-    .split(/\d+[\.)]\s+/)
-    .slice(1)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 8)
-    .slice(0, 3);
-}
-
-function buildLetterBreakdown(results = []) {
-  const letterMap = results.reduce((acc, item) => {
-    const letter = normalizeLetter(item.letter);
-    if (!acc[letter]) {
-      acc[letter] = { count: 0, reversalRiskTotal: 0, formTotal: 0 };
-    }
-    acc[letter].count += 1;
-    acc[letter].reversalRiskTotal += clamp01(item.cognitiveProfile?.reversalRisk, clamp01(item.scores?.overallRisk, 0.5));
-    acc[letter].formTotal += Number(item.scores?.letterFormScore || 0);
-    return acc;
-  }, {});
-
-  return Object.entries(letterMap)
-    .map(([letter, data]) => ({
-      letter,
-      count: data.count,
-      reversalRisk: data.reversalRiskTotal / Math.max(data.count, 1),
-      letterForm: data.formTotal / Math.max(data.count, 1),
-    }))
-    .sort((a, b) => b.reversalRisk - a.reversalRisk);
 }
 
 export default async function handler(req, res) {
@@ -151,99 +35,128 @@ export default async function handler(req, res) {
     const role = await getUserRole(decoded.uid);
     if (role !== 'guardian') return res.status(403).json({ error: 'Guardian only' });
 
-    const { studentId, weekStartDate, forceRegenerate = false } = req.body;
+    const { studentId, weekStartDate } = req.body;
     if (!studentId) return res.status(400).json({ error: 'Missing studentId' });
 
-    const guardianSnap = await adminDb.collection('users').doc(decoded.uid).get();
-    const guardianData = guardianSnap.exists ? (guardianSnap.data() || {}) : {};
-    const linkedStudentIds = guardianData.linkedStudentIds || [];
-    if (!linkedStudentIds.includes(studentId)) {
-      return res.status(403).json({ error: 'Guardian not linked to this student' });
-    }
-
+    // Fetch student info from users collection
     const studentSnap = await adminDb.collection('users').doc(studentId).get();
-    const studentName = studentSnap.exists ? (studentSnap.data()?.displayName || 'your child') : 'your child';
+    const studentName = studentSnap.exists
+      ? (studentSnap.data()?.displayName || 'your child')
+      : 'your child';
 
     // Fetch last 7 days of analysis results
     const weekStart = weekStartDate ? new Date(weekStartDate) : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    const weekKey = weekStart.toISOString().split('T')[0];
-
-    if (!forceRegenerate) {
-      // Single-field query + in-memory filter avoids requiring a composite index.
-      const existingSnap = await adminDb.collection('reports')
-        .where('studentId', '==', studentId)
-        .get();
-
-      const existing = existingSnap.docs
-        .map(mapReportDoc)
-        .filter((r) => r.guardianId === decoded.uid && r.weekStartDate === weekKey)
-        .sort((a, b) => asDate(b.generatedAtISO || b.generatedAt) - asDate(a.generatedAtISO || a.generatedAt));
-
-      if (existing.length > 0) {
-        return res.status(200).json(existing[0]);
-      }
-    }
-
     const analysisSnap = await adminDb.collection('analysisResults')
       .where('studentId', '==', studentId)
+      .where('analyzedAt', '>=', weekStart)
+      .orderBy('analyzedAt', 'desc')
       .get();
-    const analysisResults = analysisSnap.docs
-      .map((d) => {
-        const data = d.data() || {};
-        return {
-          ...data,
-          letter: normalizeLetter(data.letter),
-          cognitiveProfile: normalizeProfile(data.cognitiveProfile),
-        };
-      })
-      .filter((r) => asDate(r.analyzedAt) >= weekStart)
-      .sort((a, b) => asDate(b.analyzedAt) - asDate(a.analyzedAt));
+    const analysisResults = analysisSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
+    // Fetch sessions
     const sessionsSnap = await adminDb.collection('sessions')
       .where('studentId', '==', studentId)
+      .where('startedAt', '>=', weekStart)
+      .orderBy('startedAt', 'desc')
       .get();
-    const sessions = sessionsSnap.docs
-      .map(d => d.data())
-      .filter((s) => asDate(s.startedAt) >= weekStart)
-      .sort((a, b) => asDate(b.startedAt) - asDate(a.startedAt));
+    const sessions = sessionsSnap.docs.map((d) => d.data());
 
-    // Prepare data for Gemini
-    const avgScore = analysisResults.length > 0 
-      ? analysisResults.reduce((sum, r) => sum + (100 - (r.scores?.overallRisk || 0) * 100), 0) / analysisResults.length 
-      : 80; // default passing if no data
+    // ── Per-letter reversal risk ──
+    const letterGroups = analysisResults.reduce((acc, r) => {
+      const letter = normalizeLetter(r.letter);
+      if (!letter) return acc;
+      if (!acc[letter]) acc[letter] = [];
+      acc[letter].push(r);
+      return acc;
+    }, {});
 
-    const weeklyProfiles = analysisResults.map((row) => normalizeProfile(row.cognitiveProfile));
-    const overallProfile = averageProfile(weeklyProfiles);
-    const weakest = getWeakestMetric(overallProfile);
-    const strongest = getStrongestMetric(overallProfile);
+    const avgReversalRiskByLetter = {};
+    const lettersTraced = Object.keys(letterGroups);
+    for (const [letter, rows] of Object.entries(letterGroups)) {
+      const sum = rows.reduce(
+        (s, r) => s + clamp01(r.cognitiveProfile?.reversalRisk ?? (r.scores?.reversalScore ?? 0) / 100),
+        0
+      );
+      avgReversalRiskByLetter[letter] = Math.round((sum / rows.length) * 100) / 100;
+    }
+
+    // ── Overall dimension averages ──
+    const dims = ['writingMotor', 'reversalRisk', 'letterConsistency', 'strokeConfidence'];
+    const dimLabels = {
+      writingMotor: 'writing motor',
+      reversalRisk: 'letter reversals',
+      letterConsistency: 'letter consistency',
+      strokeConfidence: 'stroke confidence',
+    };
+    const dimTotals = { writingMotor: 0, reversalRisk: 0, letterConsistency: 0, strokeConfidence: 0 };
+    let dimCount = 0;
+    analysisResults.forEach((r) => {
+      if (r.cognitiveProfile) {
+        dims.forEach((d) => { dimTotals[d] += clamp01(r.cognitiveProfile[d], 0.5); });
+        dimCount++;
+      }
+    });
+    const avgDims = dimCount > 0
+      ? dims.reduce((acc, d) => { acc[d] = dimTotals[d] / dimCount; return acc; }, {})
+      : null;
+
+    const sortedDims = avgDims ? [...dims].sort((a, b) => avgDims[a] - avgDims[b]) : [];
+    const weakestDimension = sortedDims[0] || null;
+    const strongestDimension = sortedDims[sortedDims.length - 1] || null;
+
+    // ── Recommended path (most frequent) ──
+    const pathCounts = analysisResults.reduce((acc, r) => {
+      const p = r.cognitiveProfile?.recommendedPath;
+      if (p) acc[p] = (acc[p] || 0) + 1;
+      return acc;
+    }, {});
+    const recommendedPath = Object.entries(pathCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+
+    // ── Trend (first half vs second half risk) ──
+    const sortedByDate = [...analysisResults].sort((a, b) => asDate(a.analyzedAt) - asDate(b.analyzedAt));
+    let trend = 'stable';
+    if (sortedByDate.length >= 4) {
+      const half = Math.floor(sortedByDate.length / 2);
+      const avgOld = sortedByDate.slice(0, half).reduce((s, r) => s + clamp01(r.scores?.overallRisk ?? 0), 0) / half;
+      const avgNew = sortedByDate.slice(half).reduce((s, r) => s + clamp01(r.scores?.overallRisk ?? 0), 0) / (sortedByDate.length - half);
+      if (avgNew < avgOld - 0.05) trend = 'improving';
+      else if (avgNew > avgOld + 0.05) trend = 'declining';
+    }
+
+    // ── Context snippets for Gemini ──
+    const recentInterpretations = analysisResults
+      .slice(0, 3)
+      .map((r) => r.geminiInterpretation)
+      .filter(Boolean)
+      .map((t) => String(t).split('.')[0].trim());
 
     const topIndicators = analysisResults
-      .flatMap((r) => r.indicators?.reversals?.map((rev) => rev?.char || rev?.type || 'reversal marker') || [])
-      .filter(Boolean)
-      .slice(0, 5);
+      .flatMap((r) => r.indicators?.reversals?.map((rev) => `'${rev.char || r.letter}' reversal`) || [])
+      .slice(0, 3);
 
-    const letterBreakdown = buildLetterBreakdown(analysisResults);
-    const highestPressureLetters = letterBreakdown
-      .slice(0, 3)
-      .map((item) => `${item.letter} (${Math.round(item.reversalRisk * 100)}%)`);
+    const avgScore = analysisResults.length > 0
+      ? analysisResults.reduce((sum, r) => sum + (100 - clamp01(r.scores?.overallRisk ?? 0) * 100), 0) / analysisResults.length
+      : 80;
 
-    const recentInterpretations = analysisResults
-      .map((result) => String(result.geminiInterpretation || '').trim())
-      .filter(Boolean)
-      .slice(0, 2);
-
-    const practicedLetters = [...new Set(analysisResults.map((row) => normalizeLetter(row.letter)).filter((letter) => letter !== '?'))]
-      .slice(0, 8);
-
+    // ── Build rich weekData for Gemini ──
     const weekData = {
       childName: studentName,
+      totalSessions: sessions.length,
       sessionsCompleted: sessions.length,
       avgScore: Math.round(avgScore),
-      topIndicators: topIndicators.length > 0 ? topIndicators : null,
-      strongestMetric: strongest,
-      weakestMetric: weakest,
-      highestPressureLetters,
-      practicedLetters,
+      lettersTraced,
+      avgReversalRiskByLetter,
+      weakestDimension: weakestDimension ? dimLabels[weakestDimension] : null,
+      strongestMetric: strongestDimension ? [dimLabels[strongestDimension], avgDims?.[strongestDimension] ?? 0.5] : null,
+      weakestMetric: weakestDimension ? [dimLabels[weakestDimension], avgDims?.[weakestDimension] ?? 0.5] : null,
+      recommendedPath,
+      trend,
+      topIndicators,
+      practicedLetters: lettersTraced,
+      highestPressureLetters: Object.entries(avgReversalRiskByLetter)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 2)
+        .map(([l]) => l),
       recentInterpretations,
     };
 
@@ -252,41 +165,46 @@ export default async function handler(req, res) {
       narrative = await generateWeeklyReport(weekData);
     } catch (aiError) {
       console.error('Gemini API error:', aiError.message);
-      // Fallback narrative
-      narrative = `This week, ${studentName} participated in writing exercises and showed continued engagement with the platform. We're collecting more data to provide detailed insights.\n\nAs your child continues to practice, we'll be able to identify specific areas for improvement and track progress more accurately.\n\nHere are some activities to try at home: 1) Practice tracing letters with a finger in sand, 2) Read together for 10 minutes using a ruler to track lines, 3) Play letter-matching games with flashcards.`;
+      const letterList = lettersTraced.join(', ') || 'various letters';
+      narrative = `This week, ${studentName} traced the letter${lettersTraced.length !== 1 ? 's' : ''} ${letterList} and showed continued engagement with the platform. We're collecting more data to provide deeper insights.\n\nAs ${studentName} continues to practice, we'll be able to track progress in writing strength, letter accuracy, and stroke confidence more precisely.\n\nHere are some activities to try at home: 1) Trace the tricky letters in sand or shaving cream. 2) Read together for 10 minutes using a ruler to track lines. 3) Practice the same letter 5 times in a row slowly.`;
     }
 
-    const activities = extractActivitiesFromNarrative(narrative);
-
-    const handwritingHighlights = analysisResults.length > 0
-      ? [
-          `${analysisResults.length} handwriting sample${analysisResults.length === 1 ? '' : 's'} analysed this week.`,
-          `Strongest area: ${strongest[0]} (${Math.round(strongest[1] * 100)}%).`,
-          `Main support focus: ${weakest[0]} (${Math.round(weakest[1] * 100)}%).`,
-          highestPressureLetters.length > 0 ? `Most challenging letters: ${highestPressureLetters.join(', ')}.` : null,
-        ]
-          .filter(Boolean)
-          .join(' ')
-      : 'No new handwriting samples this week.';
+    // Extract recommended activities from the narrative
+    const activities = narrative
+      .split(/\d+[\.)]\s+/)
+      .slice(1)
+      .map((a) => a.trim())
+      .filter((a) => a.length > 10)
+      .slice(0, 3);
 
     // Save report to Firestore
-    const reportPayload = {
+    const reportRef = await adminDb.collection('reports').add({
       studentId,
       guardianId: decoded.uid,
-      generatedAt: FieldValue.serverTimestamp(),
-      weekStartDate: weekKey,
+      generatedAt: new Date(),
+      generatedAtISO: new Date().toISOString(),
+      weekStartDate: weekStart.toISOString().split('T')[0],
       narrativeSummary: narrative,
-      handwritingHighlights,
+      handwritingHighlights: analysisResults.length > 0
+        ? `${analysisResults.length} sample${analysisResults.length !== 1 ? 's' : ''} analysed this week.`
+        : 'No new samples this week.',
       recommendedActivities: activities,
-    };
-    const reportRef = await adminDb.collection('reports').add(reportPayload);
-    const savedReport = await reportRef.get();
+      trend,
+      overallProfile: avgDims ? { ...avgDims } : null,
+      pdfUrl: '',
+    });
 
-    const response = mapReportDoc(savedReport);
-    response.handwritingHighlights = handwritingHighlights;
-    response.recommendedActivities = activities;
 
-    return res.status(200).json(response);
+    return res.status(200).json({
+      reportId: reportRef.id,
+      narrative,
+      weekStartDate: weekStart.toISOString().split('T')[0],
+      narrativeSummary: narrative,
+      handwritingHighlights: `${analysisResults.length} sample${analysisResults.length !== 1 ? 's' : ''} analysed.`,
+      recommendedActivities: activities,
+      trend,
+      overallProfile: avgDims ? { ...avgDims } : null,
+    });
   } catch (error) {
     console.error('generate-report error:', error.message);
     return res.status(500).json({ error: 'Internal server error' });

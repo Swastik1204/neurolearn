@@ -7,20 +7,15 @@ Accepts handwriting images and returns forensic analysis scores.
 import os
 import io
 import json
-import base64 as _base64
 import httpx
 import joblib
 import numpy as np
+import cv2
 from PIL import Image
 from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-
-try:
-    import cv2
-except Exception:  # pragma: no cover - handled by fallback path below
-    cv2 = None
 
 app = FastAPI(title="NeuroLearn ML Service", version="1.0.0")
 
@@ -37,28 +32,6 @@ rf_model = None
 scaler = None
 metadata = {}
 
-CV2_AVAILABLE = bool(
-    cv2
-    and all(
-        hasattr(cv2, attr)
-        for attr in [
-            "imdecode",
-            "threshold",
-            "connectedComponentsWithStats",
-            "distanceTransform",
-            "goodFeaturesToTrack",
-            "findContours",
-            "arcLength",
-            "contourArea",
-            "flip",
-            "morphologyEx",
-            "resize",
-            "warpAffine",
-            "getRotationMatrix2D",
-        ]
-    )
-)
-
 @app.on_event("startup")
 async def load_models():
     global rf_model, scaler, metadata
@@ -74,34 +47,18 @@ async def load_models():
 
 # ── Request/Response models ───────────────────────────────────────────────────
 class AnalyzeRequest(BaseModel):
-    image_base64: str
+    image_url: str
     sample_id: str
-    student_id: str
-    letter: str = ""
     stroke_metadata: dict = {}
 
 class AnalyzeResponse(BaseModel):
     sample_id: str
-    student_id: str
-    letter: str
     scores: dict
     indicators: dict
-    letter_specific: dict
-    overall_risk: float
     risk_level: str
 
 # ── Image preprocessing (same as training) ────────────────────────────────────
 def preprocess_image_from_bytes(img_bytes):
-    if not CV2_AVAILABLE:
-        try:
-            with Image.open(io.BytesIO(img_bytes)) as image:
-                gray = image.convert("L").resize((32, 32), Image.Resampling.LANCZOS)
-                arr = np.array(gray, dtype=np.uint8)
-        except Exception:
-            return None
-
-        return np.where(arr < 245, 255, 0).astype(np.uint8)
-
     nparr = np.frombuffer(img_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
     if img is None:
@@ -120,98 +77,10 @@ def preprocess_image_from_bytes(img_bytes):
     denoised = cv2.morphologyEx(deskewed, cv2.MORPH_OPEN, kernel)
     return cv2.resize(denoised, (32, 32))
 
-
-def fallback_extract_features(img):
-    if img is None:
-        return None
-
-    arr = np.asarray(img, dtype=np.float32)
-    if arr.ndim != 2:
-        return [0.0] * 20
-
-    ink_mask = arr > 0
-    height, width = arr.shape
-    row_sums = ink_mask.sum(axis=1).astype(np.float32)
-    col_sums = ink_mask.sum(axis=0).astype(np.float32)
-    active_rows = np.where(row_sums > 0)[0]
-    active_cols = np.where(col_sums > 0)[0]
-
-    def safe_ratio(numerator, denominator):
-        return float(numerator) / (float(denominator) + 1e-6)
-
-    def segment_lengths(active_indices):
-        if active_indices.size == 0:
-            return np.array([0.0], dtype=np.float32)
-        breaks = np.where(np.diff(active_indices) > 1)[0] + 1
-        groups = np.split(active_indices, breaks)
-        return np.array([len(group) for group in groups], dtype=np.float32)
-
-    row_segments = segment_lengths(active_rows)
-    col_segments = segment_lengths(active_cols)
-    bbox_height = float(active_rows[-1] - active_rows[0] + 1) if active_rows.size else 0.0
-    bbox_width = float(active_cols[-1] - active_cols[0] + 1) if active_cols.size else 0.0
-    bbox_ratio = safe_ratio(bbox_width, bbox_height if bbox_height > 0 else 1.0)
-
-    top_half = ink_mask[: height // 2].sum()
-    bottom_half = ink_mask[height // 2 :].sum()
-    left_half = ink_mask[:, : width // 2].sum()
-    right_half = ink_mask[:, width // 2 :].sum()
-
-    flipped_lr = np.fliplr(arr)
-    flipped_tb = np.flipud(arr)
-    horizontal_symmetry = 1.0 - safe_ratio(np.abs(arr - flipped_lr).sum(), 255.0 * arr.size)
-    vertical_symmetry = 1.0 - safe_ratio(np.abs(arr - flipped_tb).sum(), 255.0 * arr.size)
-
-    binary = ink_mask.astype(np.uint8)
-    edge_h = np.abs(np.diff(binary, axis=1)).sum()
-    edge_v = np.abs(np.diff(binary, axis=0)).sum()
-    contour_complexity = safe_ratio(edge_h + edge_v, arr.size)
-
-    corner_estimate = 0.0
-    if height > 1 and width > 1:
-        block_sum = (
-            binary[:-1, :-1]
-            + binary[1:, :-1]
-            + binary[:-1, 1:]
-            + binary[1:, 1:]
-        )
-        corner_estimate = float(np.sum(block_sum >= 3))
-
-    baseline_reference = max(int(height * 0.8), 1)
-    baseline_deviation = safe_ratio(np.abs(active_rows - baseline_reference).mean() if active_rows.size else 0.0, height)
-    spacing_irregularity = safe_ratio(np.std(np.diff(active_cols)) if active_cols.size > 1 else 0.0, np.mean(np.diff(active_cols)) if active_cols.size > 1 else 1.0)
-
-    return [
-        safe_ratio(np.std(row_sums), np.mean(row_sums) if np.any(row_sums) else 1.0),
-        safe_ratio(np.std(col_sums), np.mean(col_sums) if np.any(col_sums) else 1.0),
-        safe_ratio(np.std(row_sums * col_sums.mean()), np.mean(row_sums * col_sums.mean()) if np.any(row_sums) else 1.0),
-        baseline_deviation,
-        spacing_irregularity,
-        float(max(len(row_segments), len(col_segments))),
-        safe_ratio(ink_mask.sum(), arr.size),
-        bbox_ratio,
-        safe_ratio(np.std([bbox_width, bbox_height]), np.mean([bbox_width, bbox_height]) if (bbox_width or bbox_height) else 1.0),
-        safe_ratio(ink_mask.sum(), arr.size),
-        safe_ratio(np.var(row_sums), height),
-        safe_ratio(np.var(col_sums), width),
-        safe_ratio(row_sums[row_sums > 0].mean() if np.any(row_sums > 0) else 0.0, height),
-        safe_ratio(row_sums[row_sums > 0].std() if np.any(row_sums > 0) else 0.0, height),
-        horizontal_symmetry,
-        vertical_symmetry,
-        corner_estimate,
-        contour_complexity,
-        safe_ratio(top_half, bottom_half if bottom_half > 0 else 1.0),
-        safe_ratio(left_half, right_half if right_half > 0 else 1.0),
-    ]
-
 def extract_features(img):
     """Same feature extraction as train.py."""
     if img is None:
         return None
-
-    if not CV2_AVAILABLE:
-        return fallback_extract_features(img)
-
     features = []
     num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(img)
     valid = [(i, stats[i]) for i in range(1, num_labels)
@@ -228,7 +97,7 @@ def extract_features(img):
     features.append(np.std(heights) / (np.mean(heights) + 1e-6))
     features.append(np.std(widths) / (np.mean(widths) + 1e-6))
     features.append(np.std(areas) / (np.mean(areas) + 1e-6))
-    bottom = [y + s[cv2.CC_STAT_HEIGHT] for _, s in valid]
+    bottom = [s[cv2.CC_STAT_TOP] + s[cv2.CC_STAT_HEIGHT] for _, s in valid]
     features.append(np.std(bottom) / (32 + 1e-6))
     gaps = np.diff(sorted(x_pos)) if len(x_pos) > 1 else [0]
     features.append(np.std(gaps) / (np.mean(gaps) + 1e-6))
@@ -278,9 +147,12 @@ async def health():
 @app.post("/analyze", response_model=AnalyzeResponse)
 async def analyze(req: AnalyzeRequest):
     try:
-        raw = req.image_base64
-        encoded = raw.split(",", 1)[1] if "," in raw else raw
-        img_bytes = _base64.b64decode(encoded)
+        # Download image from Firebase Storage
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(req.image_url, timeout=30)
+            if resp.status_code != 200:
+                raise HTTPException(status_code=400, detail="Could not download image")
+            img_bytes = resp.content
 
         # Preprocess
         img = preprocess_image_from_bytes(img_bytes)
@@ -332,36 +204,12 @@ async def analyze(req: AnalyzeRequest):
             "low"
         )
 
-        # Letter diagnostics used by API clients and webhook payload.
-        target_letter = (req.letter or "").lower()
-        if target_letter in ['b', 'd']:
-            h_sym = float(f[14])
-            reversal_val = "High" if h_sym > 0.7 else "Medium" if h_sym > 0.4 else "Low"
-            letter_specific = {
-                "reversal_risk": reversal_val,
-                "note": f"Handwriting shows potential {target_letter} reversal patterns." if h_sym > 0.5 else "Standard form."
-            }
-        elif target_letter in ['g', 'y', 'p', 'q', 'j']:
-            v_var = float(f[11])
-            descender_val = "Consistent" if v_var > 0.3 else "Short/Inconsistent"
-            letter_specific = {
-                "descender_quality": descender_val,
-                "note": "Descenders are well-formed." if v_var > 0.3 else "Focus on extending tails below the line."
-            }
-        else:
-            letter_specific = {
-                "general_form": "Good alignment" if f[3] < 0.2 else "Needs baseline focus"
-            }
-
         # Callback to Vercel webhook
-        enable_webhook = os.getenv("ENABLE_ML_WEBHOOK", "false").lower() == "true"
-        webhook_url = os.getenv("VERCEL_WEBHOOK_URL", "https://neurolearn-api.vercel.app/api/webhook/ml-result")
+        webhook_url = os.getenv("VERCEL_WEBHOOK_URL")
         webhook_secret = os.getenv("ML_WEBHOOK_SECRET")
-        if enable_webhook and webhook_url and webhook_secret:
+        if webhook_url and webhook_secret:
             payload = {
-                "sample_id": req.sample_id,
-                "student_id": req.student_id,
-                "letter": req.letter,
+                "sampleId": req.sample_id,
                 "scores": {
                     "letterFormScore": round(letter_form_score, 1),
                     "spacingScore": round(spacing_score, 1),
@@ -370,9 +218,6 @@ async def analyze(req: AnalyzeRequest):
                     "overallRisk": round(combined_risk, 3),
                 },
                 "indicators": indicators,
-                "letter_specific": letter_specific,
-                "overall_risk": round(combined_risk, 3),
-                "risk_level": risk_level,
                 "rawFeatures": {f"f{i}": v for i, v in enumerate(raw_features)},
             }
             try:
@@ -388,8 +233,6 @@ async def analyze(req: AnalyzeRequest):
 
         return AnalyzeResponse(
             sample_id=req.sample_id,
-            student_id=req.student_id,
-            letter=req.letter,
             scores={
                 "letterFormScore": round(letter_form_score, 1),
                 "spacingScore": round(spacing_score, 1),
@@ -398,8 +241,6 @@ async def analyze(req: AnalyzeRequest):
                 "overallRisk": round(combined_risk, 3),
             },
             indicators=indicators,
-            letter_specific=letter_specific,
-            overall_risk=round(combined_risk, 3),
             risk_level=risk_level,
         )
 

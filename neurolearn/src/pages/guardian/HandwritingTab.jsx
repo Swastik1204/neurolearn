@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { deleteHandwritingExercise } from '@/services/api';
 import useStudentData from '@/hooks/useStudentData';
 import AnnotatedSampleModal from '@/components/handwriting/AnnotatedSampleModal';
+import Disclaimer from '@/components/Disclaimer';
 
 const normalizeLetter = (value) => {
   const raw = String(value || '').trim();
@@ -96,7 +97,16 @@ export default function HandwritingTab({ studentId }) {
                   const localResult = sample.analysisResult || analysisResults.find((item) => item.sampleId === sample.id) || {};
                   const riskLevel = String(localResult.riskLevel || localResult.risk_level || sample.analysisStatus || 'pending').toLowerCase();
                   const tones = riskTone[riskLevel] || 'text-muted-foreground bg-muted border-border';
-                  const capturedAt = sample.capturedAt?.toDate ? sample.capturedAt.toDate().toLocaleString() : 'Unknown date';
+                  const parseDate = (val) => {
+                    if (!val) return null;
+                    if (typeof val.toDate === 'function') return val.toDate();
+                    if (val._seconds !== undefined) return new Date(val._seconds * 1000);
+                    if (val.seconds !== undefined) return new Date(val.seconds * 1000);
+                    const d = new Date(val);
+                    return isNaN(d.getTime()) ? null : d;
+                  };
+                  const dateObj = parseDate(sample.capturedAt);
+                  const capturedAt = dateObj ? dateObj.toLocaleString() : 'Unknown date';
                   const scores = localResult.scores || {};
 
                   return (
@@ -184,6 +194,8 @@ export default function HandwritingTab({ studentId }) {
           />
         </div>
       )}
+
+      <Disclaimer />
     </div>
   );
 }

@@ -1,15 +1,6 @@
 import { setCors } from '../../lib/cors.js';
 import { adminDb } from '../../lib/firebaseAdmin.js';
 import { verifyToken, getUserRole } from '../../lib/auth.js';
-const DEFAULT_PROFILE = {
-  writingMotor: 0.5,
-  reversalRisk: 0.5,
-  letterConsistency: 0.5,
-  strokeConfidence: 0.5,
-  riskBand: 'moderate',
-  recommendedPath: 'consistency_building',
-};
-
 
 const DEFAULT_PROFILE = {
   writingMotor: 0.5,
@@ -22,8 +13,11 @@ const DEFAULT_PROFILE = {
 
 function asDate(value) {
   if (!value) return new Date(0);
-  if (value?.toDate) return value.toDate();
-  return new Date(value);
+  if (typeof value.toDate === 'function') return value.toDate();
+  if (value._seconds !== undefined) return new Date(value._seconds * 1000);
+  if (value.seconds !== undefined) return new Date(value.seconds * 1000);
+  const d = new Date(value);
+  return isNaN(d.getTime()) ? new Date(0) : d;
 }
 
 function clamp01(value, fallback = 0) {

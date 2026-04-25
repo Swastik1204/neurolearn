@@ -1,6 +1,7 @@
 import { initializeApp, cert, applicationDefault, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
+import { getStorage } from 'firebase-admin/storage';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -78,4 +79,5 @@ function getApp() {
 const app = getApp();
 export const adminDb = getFirestore(app);
 export const adminAuth = getAuth(app);
+export const adminStorage = getStorage(app);
 export default app;

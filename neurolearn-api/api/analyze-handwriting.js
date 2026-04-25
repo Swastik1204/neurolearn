@@ -138,12 +138,23 @@ export default async function handler(req, res) {
 
     const resolvedLetter = normalizeLetter(letter || strokeMetadata?.currentLetter);
     const normalizedStrokeMetadata = normalizeStrokeMetadata(strokeMetadata || {}, resolvedLetter);
-    const mlLetter = resolvedLetter === 'unknown' ? '' : resolvedLetter.toLowerCase();
 
-    // Update sample status to processing and store imageBase64
+    // Upload image to Firebase Storage for ML service to download
+    const bucket = adminStorage.bucket('neurolearn-tutor-app.appspot.com');
+    const file = bucket.file(`samples/${sampleId}.png`);
+    const buffer = Buffer.from(imageBase64.split(',')[1], 'base64');
+    await file.save(buffer, { contentType: 'image/png' });
+    
+    // Get a signed URL for the ML service (expires in 10 mins)
+    const [imageUrl] = await file.getSignedUrl({
+      action: 'read',
+      expires: Date.now() + 10 * 60 * 1000
+    });
+
+    // Update sample status
     await adminDb.collection('handwritingSamples').doc(sampleId).update({
       analysisStatus: 'processing',
-      imageBase64,
+      imageUrl,
       letter: resolvedLetter,
     });
 
@@ -157,7 +168,7 @@ export default async function handler(req, res) {
     let usedMlUrl = null;
 
     for (const mlServiceUrl of mlUrls) {
-      const timeout = withTimeout(10000);
+      const timeout = withTimeout(35000); // Increased timeout for download
       try {
         const response = await fetch(`${mlServiceUrl}/analyze`, {
           method: 'POST',
@@ -167,15 +178,14 @@ export default async function handler(req, res) {
           },
           signal: timeout.signal,
           body: JSON.stringify({
-            image_base64: imageBase64,
-            letter: mlLetter,
+            image_url: imageUrl,
             sample_id: sampleId,
-            student_id: studentId,
             stroke_metadata: normalizedStrokeMetadata,
           }),
         });
         if (!response.ok) {
-          console.error(`ML service returned error from ${mlServiceUrl}:`, response.status);
+          const errText = await response.text();
+          console.error(`ML service error from ${mlServiceUrl}:`, response.status, errText);
           mlError = new Error(`ML ${response.status}`);
           continue;
         }
@@ -205,8 +215,16 @@ export default async function handler(req, res) {
       });
     }
 
-    const normalizedScores = normalizeScores(mlData.scores, mlData.overall_risk || 0);
+    // ML Data now has { scores, indicators, risk_level }
+    const normalizedScores = normalizeScores(mlData.scores, mlData.scores?.overallRisk || 0);
     const cognitiveProfile = computeCognitiveProfile(normalizedScores, normalizedStrokeMetadata);
+    
+    // We still need letterSpecific for Gemini/UI, so we'll compute it here or use a default
+    // since the user removed it from the ML service.
+    const letterSpecific = {
+      note: mlData.risk_level === 'high' ? `Handwriting shows potential ${resolvedLetter} patterns to focus on.` : "Standard form."
+    };
+
     const analysisDoc = {
       sampleId,
       studentId,
@@ -214,7 +232,7 @@ export default async function handler(req, res) {
       analyzedAt: FieldValue.serverTimestamp(),
       scores: normalizedScores,
       indicators: mlData.indicators || { reversals: [] },
-      letterSpecific: mlData.letter_specific || {},
+      letterSpecific,
       riskLevel: mlData.risk_level || 'low',
       cognitiveProfile,
       geminiInterpretation: null,
@@ -232,7 +250,7 @@ export default async function handler(req, res) {
       geminiInterpretation = await generateHandwritingInterpretation({
         letter: resolvedLetter,
         scores: normalizedScores,
-        letter_specific: analysisDoc.letterSpecific,
+        letter_specific: letterSpecific,
         studentName,
       });
 

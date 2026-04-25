@@ -1,6 +1,7 @@
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import useStudentData from '@/hooks/useStudentData';
 import { formatDate } from '@/utils/dateUtils';
+import Disclaimer from '@/components/Disclaimer';
 
 const pathLabel = {
   reversal_reinforcement: 'Focus path: letter reversal reinforcement',
@@ -171,12 +172,22 @@ export default function OverviewTab({ studentId }) {
           ) : (
             <div className="space-y-2">
               {recentSessions.map((session) => {
-                const started = session.startedAt?.toDate ? session.startedAt.toDate() : new Date(session.startedAt || Date.now());
+                const parseDate = (val) => {
+                  if (!val) return new Date();
+                  if (typeof val.toDate === 'function') return val.toDate();
+                  if (val._seconds !== undefined) return new Date(val._seconds * 1000);
+                  if (val.seconds !== undefined) return new Date(val.seconds * 1000);
+                  const d = new Date(val);
+                  return isNaN(d.getTime()) ? new Date() : d;
+                };
+                const started = parseDate(session.startedAt);
                 const weak = session.cognitiveProfile ? weakestDimension(session.cognitiveProfile) : null;
                 return (
                   <div key={session.id} className="rounded-lg border border-border p-3 flex flex-wrap items-center justify-between gap-2">
                     <div>
-                      <p className="font-medium text-foreground text-sm">{formatDate(started.toISOString())}</p>
+                      <p className="font-medium text-foreground text-sm">
+                        {started ? formatDate(started.toISOString()) : 'Unknown date'}
+                      </p>
                       <p className="text-xs text-muted-foreground">Letters: {(session.letters || []).join(', ') || '?'}</p>
                     </div>
                     <div className="text-right">
@@ -193,6 +204,8 @@ export default function OverviewTab({ studentId }) {
           )}
         </div>
       </div>
+
+      <Disclaimer />
     </div>
   );
 }
