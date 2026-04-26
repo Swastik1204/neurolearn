@@ -1,22 +1,44 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import useCurrentUser from '@/hooks/useCurrentUser';
+import useScreeningStatus from '@/hooks/useScreeningStatus';
 import { PenTool, BookOpen, Star, LogOut } from 'lucide-react';
 import { signOut } from 'firebase/auth';
 import { auth } from '@/services/firebase';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import api from '@/services/api';
 
 export default function StudentHome() {
-  const { user } = useCurrentUser();
+  const { user, loading: authLoading } = useCurrentUser();
+  const { completed, loading: screeningLoading } = useScreeningStatus(user?.uid);
+  const navigate = useNavigate();
   const [lessonText, setLessonText] = useState("");
   const [dynamicWords, setDynamicWords] = useState([]);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (authLoading || screeningLoading || !user?.uid) return;
+    if (!completed) {
+      navigate('/student/screening', { replace: true });
+    }
+  }, [authLoading, screeningLoading, user?.uid, completed, navigate]);
+
+  if (authLoading || screeningLoading) {
+    return (
+      <div className="min-h-screen bg-background student-view flex items-center justify-center">
+        <span className="loading loading-spinner loading-lg text-primary" />
+      </div>
+    );
+  }
+
+  if (user?.uid && !completed) {
+    return null;
+  }
 
   const handleLogout = async () => {
     await signOut(auth);
   };
 
-  const testGemini = async () => {
+  const generateAILesson = async () => {
     setLoading(true);
     try {
       // Safely proxy request to backend API to protect the Gemini Key
@@ -100,7 +122,7 @@ export default function StudentHome() {
               {lessonText ? lessonText : "Click below to generate a quick encouraging lesson from Gemini AI!"}
             </p>
             <button
-               onClick={testGemini}
+               onClick={generateAILesson}
                disabled={loading}
                className="mt-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg font-medium hover:bg-primary/90 transition-colors"
             >

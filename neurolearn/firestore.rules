@@ -58,6 +58,13 @@ service cloud.firestore {
       allow create: if request.auth != null;
     }
 
+    match /screeningResults/{resultId} {
+      allow read: if isOwnerOrLinkedStudent(resource.data.studentId);
+      allow create: if request.auth != null
+        && request.resource.data.studentId == request.auth.uid;
+      allow write: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

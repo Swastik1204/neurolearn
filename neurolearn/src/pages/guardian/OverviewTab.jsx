@@ -5,9 +5,11 @@ import Disclaimer from '@/components/Disclaimer';
 
 const pathLabel = {
   reversal_reinforcement: 'Focus path: letter reversal reinforcement',
+  phonological_reinforcement: 'Focus path: phonological reinforcement',
   motor_development: 'Focus path: writing motor development',
   consistency_building: 'Focus path: consistency building',
   confidence_pacing: 'Focus path: confidence pacing',
+  general_practice: 'Focus path: general daily practice',
 };
 
 const bandBadge = {
@@ -48,10 +50,26 @@ function profileBars(profile = {}) {
   ];
 }
 
+function percent(value) {
+  return `${Math.round(clamp01(value, 0) * 100)}%`;
+}
+
+function asDateString(value) {
+  if (!value) return 'Unknown date';
+  if (typeof value === 'string') return formatDate(value);
+  if (typeof value.toDate === 'function') return formatDate(value.toDate().toISOString());
+  if (value._seconds !== undefined) return formatDate(new Date(value._seconds * 1000).toISOString());
+  if (value.seconds !== undefined) return formatDate(new Date(value.seconds * 1000).toISOString());
+  const d = new Date(value);
+  return isNaN(d.getTime()) ? 'Unknown date' : formatDate(d.toISOString());
+}
+
 export default function OverviewTab({ studentId }) {
   const { sessions = [], summary, loading } = useStudentData(studentId);
 
   const overallProfile = summary?.overallProfile || null;
+  const screeningBaseline = summary?.screeningBaseline || null;
+  const baselineProfile = screeningBaseline?.baselineProfile || null;
   const timeline = (summary?.profileTimeline || []).map((item) => ({
     ...item,
     label: formatDate(item.date),
@@ -73,6 +91,58 @@ export default function OverviewTab({ studentId }) {
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {baselineProfile && (
+        <div className="card bg-base-100 border border-border shadow-sm">
+          <div className="card-body">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="font-semibold text-foreground">Baseline Screening</h3>
+              <span className={`badge ${bandBadge[baselineProfile?.writingProfile?.overallRiskBand] || 'badge-warning'} badge-outline`}>
+                {String(baselineProfile?.writingProfile?.overallRiskBand || 'moderate').toUpperCase()}
+              </span>
+            </div>
+
+            <p className="text-sm text-muted-foreground">
+              Initial screening completed on {asDateString(baselineProfile.completedAt || screeningBaseline.completedAt)}
+            </p>
+
+            <div className="grid grid-cols-1 gap-2 text-sm mt-2">
+              <div className="flex items-center justify-between rounded-lg bg-muted/40 px-3 py-2">
+                <span className="text-muted-foreground">Letter recognition accuracy</span>
+                <span className="font-semibold text-foreground">{percent(baselineProfile?.visualDiscrimination?.accuracy)}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-lg bg-muted/40 px-3 py-2">
+                <span className="text-muted-foreground">Sound awareness accuracy</span>
+                <span className="font-semibold text-foreground">{percent(baselineProfile?.phonologicalAwareness?.accuracy)}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-lg bg-muted/40 px-3 py-2">
+                <span className="text-muted-foreground">Writing risk level</span>
+                <span className={`badge ${bandBadge[baselineProfile?.writingProfile?.overallRiskBand] || 'badge-warning'} badge-outline`}>
+                  {String(baselineProfile?.writingProfile?.overallRiskBand || 'moderate').toUpperCase()}
+                </span>
+              </div>
+            </div>
+
+            {(baselineProfile?.visualDiscrimination?.confusedPairs || []).length > 0 && (
+              <p className="text-sm text-muted-foreground mt-2">
+                Letter pairs to watch: {(baselineProfile.visualDiscrimination.confusedPairs || []).join(', ')}
+              </p>
+            )}
+
+            {(baselineProfile?.phonologicalAwareness?.weakAreas || []).length > 0 && (
+              <p className="text-sm text-muted-foreground mt-1">
+                Sound areas to develop: {(baselineProfile.phonologicalAwareness.weakAreas || []).join(', ')}
+              </p>
+            )}
+
+            <p className="text-sm text-muted-foreground mt-2">
+              {pathLabel[baselineProfile?.recommendedPath] || pathLabel.general_practice}
+            </p>
+
+            <Disclaimer />
+          </div>
+        </div>
+      )}
+
       <div className="card bg-base-100 border border-border shadow-sm">
         <div className="card-body">
           <div className="flex items-center justify-between gap-3">

@@ -259,6 +259,7 @@ export default function TeacherDashboard() {
                         <th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider hidden md:table-cell">Last Session</th>
                         <th className="text-center py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">Risk band</th>
                         <th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider hidden lg:table-cell">Weakest area</th>
+                        <th className="text-center py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">Screening</th>
                         <th className="text-center py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider hidden sm:table-cell">Sessions</th>
                         <th className="text-right py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">Actions</th>
                       </tr>
@@ -289,6 +290,18 @@ export default function TeacherDashboard() {
                             </td>
                             <td className="py-3 px-4 text-sm text-muted-foreground hidden lg:table-cell">
                               {student.weakestDim ? (dimLabel[student.weakestDim] || student.weakestDim) : '—'}
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              {student.screeningCompleted ? (
+                                <span className="inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded-full border font-semibold text-success bg-success/10 border-success/30">
+                                  <Check className="w-3.5 h-3.5" />
+                                  Done
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center text-xs px-2 py-1 rounded-full border font-semibold text-muted-foreground bg-muted border-border">
+                                  Pending
+                                </span>
+                              )}
                             </td>
                             <td className="py-3 px-4 text-center text-sm text-foreground hidden sm:table-cell">
                               {student.sessionCount || 0}

@@ -206,10 +206,20 @@ export default async function handler(req, res) {
       .sort((a, b) => asDate(b.generatedAtISO || b.generatedAt) - asDate(a.generatedAtISO || a.generatedAt))
       .slice(0, 10);
 
+    const screeningSnap = await adminDb.collection('screeningResults')
+      .where('studentId', '==', studentId)
+      .limit(20)
+      .get();
+    const screeningBaseline = screeningSnap.docs
+      .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
+      .sort((a, b) => asDate(b.completedAt) - asDate(a.completedAt))[0] || null;
+
     const sampleSnap = await adminDb.collection('handwritingSamples')
       .where('studentId', '==', studentId)
       .get();
-    const handwritingSamples = sampleSnap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+    const handwritingSamples = sampleSnap.docs
+      .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
+      .filter((sample) => sample.source !== 'screening');
 
     const analysisBySampleId = analysisResults.reduce((acc, result) => {
       if (result.sampleId) {
@@ -346,6 +356,7 @@ export default async function handler(req, res) {
       analysisResults,
       sessions,
       reports,
+      screeningBaseline,
       handwritingSamples: handwritingSamplesWithAnalysis,
       profileTimeline,
       overallProfile,
