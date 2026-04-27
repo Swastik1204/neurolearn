@@ -20,6 +20,11 @@ function asDate(value) {
   return isNaN(d.getTime()) ? new Date(0) : d;
 }
 
+function toIsoOrNull(value) {
+  const d = asDate(value);
+  return d.getTime() > 0 ? d.toISOString() : null;
+}
+
 function clamp01(value, fallback = 0) {
   const num = Number(value);
   if (Number.isNaN(num)) return fallback;
@@ -140,6 +145,9 @@ export default async function handler(req, res) {
     const { studentId } = req.query;
     if (!studentId) return res.status(400).json({ error: 'Missing studentId' });
 
+    const studentDoc = await adminDb.collection('users').doc(studentId).get();
+    const studentData = studentDoc.exists ? (studentDoc.data() || {}) : {};
+
     // If guardian, verify they have access to this student
     if (role === 'guardian') {
       const userDoc = await adminDb.collection('users').doc(decoded.uid).get();
@@ -214,6 +222,30 @@ export default async function handler(req, res) {
       .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
       .sort((a, b) => asDate(b.completedAt) - asDate(a.completedAt))[0] || null;
 
+    const screeningFrequencyDays = Number(
+      studentData?.screeningSchedule?.frequencyDays
+      || studentData?.baselineProfile?.screeningFrequencyDays
+      || 7
+    );
+
+    const screeningNextDueAtIso =
+      toIsoOrNull(studentData?.nextScreeningDueAt)
+      || toIsoOrNull(studentData?.screeningSchedule?.nextDueAt)
+      || toIsoOrNull(studentData?.baselineProfile?.nextScreeningDueAt)
+      || toIsoOrNull(screeningBaseline?.nextScreeningDueAt)
+      || toIsoOrNull(screeningBaseline?.baselineProfile?.nextScreeningDueAt);
+
+    const screeningSchedule = screeningNextDueAtIso ? {
+      frequencyDays: screeningFrequencyDays,
+      nextDueAt: screeningNextDueAtIso,
+      lastCompletedAt:
+        toIsoOrNull(studentData?.screeningCompletedAt)
+        || toIsoOrNull(studentData?.screeningSchedule?.lastCompletedAt)
+        || toIsoOrNull(screeningBaseline?.completedAt)
+        || toIsoOrNull(screeningBaseline?.baselineProfile?.completedAt),
+      isDue: asDate(screeningNextDueAtIso).getTime() <= Date.now(),
+    } : null;
+
     const sampleSnap = await adminDb.collection('handwritingSamples')
       .where('studentId', '==', studentId)
       .get();
@@ -282,6 +314,7 @@ export default async function handler(req, res) {
             letterConsistency: 0,
             strokeConfidence: 0,
           },
+          emotions: { happy: 0, okay: 0, hard: 0 },
         };
       }
 
@@ -297,6 +330,11 @@ export default async function handler(req, res) {
       target.totals.reversalRisk += profile.reversalRisk;
       target.totals.letterConsistency += profile.letterConsistency;
       target.totals.strokeConfidence += profile.strokeConfidence;
+      
+      const emo = result.emotionAtSubmit || result.emotion;
+      if (['happy', 'okay', 'hard'].includes(emo)) {
+        target.emotions[emo]++;
+      }
       return acc;
     }, {});
 
@@ -320,6 +358,7 @@ export default async function handler(req, res) {
               letterConsistency: payload.totals.letterConsistency / count,
               strokeConfidence: payload.totals.strokeConfidence / count,
             },
+            emotions: payload.emotions,
           },
         ];
       })
@@ -357,6 +396,7 @@ export default async function handler(req, res) {
       sessions,
       reports,
       screeningBaseline,
+      screeningSchedule,
       handwritingSamples: handwritingSamplesWithAnalysis,
       profileTimeline,
       overallProfile,

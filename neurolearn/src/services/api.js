@@ -39,6 +39,9 @@ export const analyzeHandwriting = (data) =>
 export const generateReport = (data) =>
   api.post('/api/generate-report', data);
 
+export const updateEmotion = (data) =>
+  api.post('/api/update-emotion', data);
+
 export const deleteHandwritingExercise = (sampleId) =>
   api.delete(`/api/handwriting-sample/${sampleId}`);
 

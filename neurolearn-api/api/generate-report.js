@@ -100,6 +100,33 @@ export default async function handler(req, res) {
       ? dims.reduce((acc, d) => { acc[d] = dimTotals[d] / dimCount; return acc; }, {})
       : null;
 
+    const emotions = {};
+    const letterEmotionTally = {};
+    
+    analysisResults.forEach(r => {
+      const emo = r.emotionAtSubmit || 'neutral';
+      const letter = normalizeLetter(r.letter);
+      
+      // Overall tally
+      emotions[emo] = (emotions[emo] || 0) + 1;
+      
+      // Per-letter tally
+      if (letter) {
+        if (!letterEmotionTally[letter]) {
+          letterEmotionTally[letter] = { happy: 0, okay: 0, hard: 0 };
+        }
+        if (['happy', 'okay', 'hard'].includes(emo)) {
+          letterEmotionTally[letter][emo]++;
+        }
+      }
+    });
+
+    const topEmotion = Object.entries(emotions).sort((a, b) => b[1] - a[1])[0]?.[0] || 'neutral';
+    
+    const emotionTallyString = Object.entries(letterEmotionTally)
+      .map(([letter, counts]) => `${letter} — ${counts.happy} happy, ${counts.okay} okay, ${counts.hard} hard`)
+      .join('. ') || 'No emotional data recorded.';
+
     const sortedDims = avgDims ? [...dims].sort((a, b) => avgDims[a] - avgDims[b]) : [];
     const weakestDimension = sortedDims[0] || null;
     const strongestDimension = sortedDims[sortedDims.length - 1] || null;
@@ -158,6 +185,7 @@ export default async function handler(req, res) {
         .slice(0, 2)
         .map(([l]) => l),
       recentInterpretations,
+      emotionTally: emotionTallyString,
     };
 
     let narrative;

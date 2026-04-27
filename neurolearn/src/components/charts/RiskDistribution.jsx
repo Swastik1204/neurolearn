@@ -9,10 +9,14 @@ const RISK_COLORS = {
 export default function RiskDistribution({ data = [] }) {
   // data: [{ name: 'Low Risk', value: 5 }, { name: 'Medium Risk', value: 3 }, { name: 'High Risk', value: 2 }]
   const colors = [RISK_COLORS.low, RISK_COLORS.medium, RISK_COLORS.high];
+  const total = data.reduce((sum, item) => sum + Number(item.value || 0), 0);
 
   return (
-    <div className="bg-card rounded-xl border border-border p-5 shadow-sm">
-      <h3 className="font-semibold text-foreground mb-4">Risk Level Distribution</h3>
+    <div className="chart-card rounded-xl border border-border p-5">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-semibold text-foreground">Risk Level Distribution</h3>
+        <span className="text-xs text-muted-foreground">{total} students</span>
+      </div>
       <div className="h-56">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
@@ -24,6 +28,13 @@ export default function RiskDistribution({ data = [] }) {
               outerRadius={80}
               paddingAngle={3}
               dataKey="value"
+              labelLine={false}
+              label={({ cx, cy }) => (
+                <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle">
+                  <tspan x={cx} dy="-4" fill="#1A1A2E" fontSize="24" fontWeight="800">{total}</tspan>
+                  <tspan x={cx} dy="18" fill="#6B6B80" fontSize="11">Total</tspan>
+                </text>
+              )}
             >
               {data.map((entry, index) => (
                 <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />
@@ -33,7 +44,8 @@ export default function RiskDistribution({ data = [] }) {
               contentStyle={{
                 background: '#FFFFFF',
                 border: '1px solid #E2E1D5',
-                borderRadius: '8px',
+                borderRadius: '10px',
+                boxShadow: '0 10px 20px rgba(26,26,46,0.08)',
                 fontSize: 13,
               }}
             />
@@ -45,6 +57,23 @@ export default function RiskDistribution({ data = [] }) {
           </PieChart>
         </ResponsiveContainer>
       </div>
+
+      {total > 0 && (
+        <div className="space-y-2 mt-2">
+          {data.map((item, idx) => {
+            const pct = Math.round((Number(item.value || 0) / total) * 100);
+            return (
+              <div key={item.name} className="flex items-center gap-2">
+                <span className="w-20 text-xs text-muted-foreground">{item.name}</span>
+                <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                  <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: colors[idx % colors.length] }} />
+                </div>
+                <span className="w-8 text-right text-xs font-semibold text-foreground">{pct}%</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

@@ -7,11 +7,20 @@
   "scripts": {
     "serve": "vercel dev",
     "deploy": "vercel --prod",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "seed:demo": "node scripts/seed-demo-data.js",
+    "seed:showcase": "node scripts/seed-showcase-users.js",
+    "db:prune:dry": "set DRY_RUN=1&& node scripts/prune-showcase-db.js",
+    "db:prune:showcase": "node scripts/prune-showcase-db.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "dotenv": "^17.3.1",
     "firebase-admin": "^12.7.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "eslint": "^9.39.1",
+    "globals": "^17.0.0"
   }
 }

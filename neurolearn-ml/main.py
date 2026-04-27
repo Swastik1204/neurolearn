@@ -16,6 +16,8 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import base64
+from typing import Optional
 
 app = FastAPI(title="NeuroLearn ML Service", version="1.0.0")
 
@@ -47,7 +49,8 @@ async def load_models():
 
 # ── Request/Response models ───────────────────────────────────────────────────
 class AnalyzeRequest(BaseModel):
-    image_url: str
+    image_url: Optional[str] = None
+    image_base64: Optional[str] = None
     sample_id: str
     stroke_metadata: dict = {}
 
@@ -59,8 +62,13 @@ class AnalyzeResponse(BaseModel):
 
 # ── Image preprocessing (same as training) ────────────────────────────────────
 def preprocess_image_from_bytes(img_bytes):
-    nparr = np.frombuffer(img_bytes, np.uint8)
-    img = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
+    try:
+        pil_img = Image.open(io.BytesIO(img_bytes)).convert('L')
+        img = np.array(pil_img)
+    except Exception as e:
+        print(f"Pillow decode failed: {e}")
+        return None
+
     if img is None:
         return None
     _, binary = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
@@ -147,12 +155,21 @@ async def health():
 @app.post("/analyze", response_model=AnalyzeResponse)
 async def analyze(req: AnalyzeRequest):
     try:
-        # Download image from Firebase Storage
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(req.image_url, timeout=30)
-            if resp.status_code != 200:
-                raise HTTPException(status_code=400, detail="Could not download image")
-            img_bytes = resp.content
+        # Download or decode image
+        if req.image_base64:
+            if "," in req.image_base64:
+                img_data = req.image_base64.split(",")[1]
+            else:
+                img_data = req.image_base64
+            img_bytes = base64.b64decode(img_data)
+        elif req.image_url:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(req.image_url, timeout=30)
+                if resp.status_code != 200:
+                    raise HTTPException(status_code=400, detail="Could not download image")
+                img_bytes = resp.content
+        else:
+            raise HTTPException(status_code=400, detail="No image provided (need image_url or image_base64)")
 
         # Preprocess
         img = preprocess_image_from_bytes(img_bytes)

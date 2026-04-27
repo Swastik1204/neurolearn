@@ -1,17 +1,16 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, updateDoc, doc } from 'firebase/firestore';
 import { db } from '@/services/firebase';
 import useCurrentUser from '@/hooks/useCurrentUser';
-import useEmotionDetection from '@/hooks/useEmotionDetection';
 import WritingCanvas from '@/components/canvas/WritingCanvas';
 import TextToSpeech from '@/components/TextToSpeech';
-import { analyzeHandwriting } from '@/services/api';
+import { analyzeHandwriting, updateEmotion } from '@/services/api';
 import mlService from '../../services/mlService';
-import { BookOpen, ArrowLeft } from 'lucide-react';
+import { BookOpen, ArrowLeft, Heart, ArrowRight } from 'lucide-react';
 
-const EXERCISE_LENGTH = 2;
-const DEFAULT_LETTERS = ['b', 'd'];
+const EXERCISE_LENGTH = 3;
+const DEFAULT_LETTERS = ['b', 'd', 'c'];
 const DEFAULT_PROMPTS = DEFAULT_LETTERS.map((letter) => letter.toUpperCase());
 const ANALYSIS_TIMEOUT_MS = 2500;
 
@@ -84,40 +83,26 @@ const profileFromAverages = (averages = {}) => {
   return { ...profile, recommendedPath: 'confidence_pacing' };
 };
 
-const EMOTION_EMOJI = {
-  happy: '🙂',
-  sad: '😢',
-  angry: '😠',
-  fearful: '😨',
-  disgusted: '🤢',
-  surprised: '😮',
-  neutral: '😐',
-};
-
 export default function WritingExercise() {
   const { user } = useCurrentUser();
   const navigate = useNavigate();
   const location = useLocation();
-  const {
-    videoRef,
-    dominantEmotion,
-    cameraReady,
-    modelsLoading,
-  } = useEmotionDetection();
 
   const [prompts, setPrompts] = useState(DEFAULT_PROMPTS);
-
   const [currentIndex, setCurrentIndex] = useState(0);
   const [sessionId] = useState(() => `session_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`);
   const sessionStartedAtRef = useRef(new Date());
   const [wordTimings, setWordTimings] = useState([]);
+  const [sessionEmotions, setSessionEmotions] = useState([]);
   const startTimeRef = useRef(null);
   const submitInFlightRef = useRef(false);
 
   const letterResultsRef = useRef([]);
-  const [, setLetterResults] = useState([]);
   const [isAnalysing, setIsAnalysing] = useState(false);
   const [letterFeedback, setLetterFeedback] = useState(null);
+  const [showEmotionCheck, setShowEmotionCheck] = useState(false);
+  const [currentSampleId, setCurrentSampleId] = useState(null);
+  const [currentDuration, setCurrentDuration] = useState(0);
 
   const resolvePrompts = useCallback(() => {
     if (location.state?.words?.length > 0) {
@@ -126,11 +111,9 @@ export default function WritingExercise() {
         .filter(Boolean)
         .slice(0, EXERCISE_LENGTH);
     }
-
     return DEFAULT_PROMPTS;
   }, [location.state?.words]);
 
-  // Initialization if any (mlService handled)
   useEffect(() => {
     mlService.initialize();
   }, []);
@@ -146,16 +129,21 @@ export default function WritingExercise() {
   const progress = prompts.length > 0 ? ((currentIndex) / prompts.length) * 100 : 0;
 
   useEffect(() => {
-    if (!currentWord || isAnalysing || letterFeedback) {
+    if (!currentWord || isAnalysing || letterFeedback || showEmotionCheck) {
       return;
     }
-
     startTimeRef.current = Date.now();
-  }, [currentWord, isAnalysing, letterFeedback]);
+  }, [currentWord, isAnalysing, letterFeedback, showEmotionCheck]);
 
   const finishSession = useCallback(async (lastDuration) => {
     try {
       const totalDuration = wordTimings.reduce((sum, w) => sum + w.durationMs, 0) + lastDuration;
+      
+      const emotionCounts = sessionEmotions.reduce((acc, emo) => {
+        acc[emo] = (acc[emo] || 0) + 1;
+        return acc;
+      }, {});
+      
       const letterResults = letterResultsRef.current || [];
       const profileRows = letterResults
         .map((result) => result?.cognitiveProfile)
@@ -199,39 +187,64 @@ export default function WritingExercise() {
         deviceType: navigator.maxTouchPoints > 0 ? 'touch' : 'mouse',
         cognitiveProfile: sessionProfile,
         sessionRiskBand,
+        emotionProfile: emotionCounts,
       });
     } catch (err) {
       console.error('Session save failed:', err.message);
     }
     navigate('/student/complete', { state: { letterResults: letterResultsRef.current } });
-  }, [navigate, prompts.length, user?.uid, wordTimings]);
+  }, [navigate, prompts.length, user?.uid, wordTimings, sessionEmotions]);
 
-  const handleSubmit = useCallback(async ({ strokeData, strokeMetadata = {}, submitMeta = {} } = {}) => {
-    if (submitInFlightRef.current || !currentWord) return;
-    
-    // CRITICAL: Validate that there's actual content before submitting
-    // For auto-submit, check if canvas has any strokes
-    if (!strokeData || strokeData.length === 0) {
-      // For auto-submit without stroke data, check the canvas directly
-      const canvas = document.querySelector('canvas');
-      if (canvas) {
-        const imageData = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
-        const hasContent = imageData.data.some((byte, idx) => {
-          // Skip alpha channel, check RGB values differ from background white (#FAFAF7 ≈ 250,250,247)
-          return (idx % 4 !== 3) && Math.abs(byte - [250, 250, 247][idx % 3]) > 5;
-        });
-        
-        if (!hasContent && submitMeta.autoSubmitted) {
-          console.log('Auto-submit blocked: Canvas is empty');
-          return;
+  const handleEmotionSelect = useCallback(async (emotion) => {
+    if (emotion) {
+      setSessionEmotions(prev => [...prev, emotion]);
+      // Update via API
+      if (currentSampleId) {
+        try {
+          await updateEmotion({
+            sampleId: currentSampleId,
+            emotionAtSubmit: emotion
+          });
+        } catch (err) {
+          console.error('Failed to update emotion via API:', err);
+          // Fallback to direct Firestore update if API fails (as backup)
+          try {
+            await updateDoc(doc(db, 'handwritingSamples', currentSampleId), {
+              emotionAtSubmit: emotion
+            });
+          } catch (fErr) {
+            console.error('Firestore fallback also failed:', fErr);
+          }
         }
       }
     }
 
-    submitInFlightRef.current = true;
+    setShowEmotionCheck(false);
+    if (isLastWord) {
+      finishSession(currentDuration);
+    } else {
+      setCurrentIndex((prev) => prev + 1);
+    }
+  }, [currentSampleId, currentDuration, finishSession, isLastWord]);
 
+  const handleSubmit = useCallback(async ({ strokeData, strokeMetadata = {}, submitMeta = {} } = {}) => {
+    if (submitInFlightRef.current || !currentWord) return;
+    
+    if (!strokeData || strokeData.length === 0) {
+      const canvas = document.querySelector('canvas');
+      if (canvas) {
+        const imageData = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
+        const hasContent = imageData.data.some((byte, idx) => {
+          return (idx % 4 !== 3) && Math.abs(byte - [250, 250, 247][idx % 3]) > 5;
+        });
+        if (!hasContent && submitMeta.autoSubmitted) return;
+      }
+    }
+
+    submitInFlightRef.current = true;
     const endTime = Date.now();
     const duration = startTimeRef.current ? endTime - startTimeRef.current : 0;
+    setCurrentDuration(duration);
     setWordTimings((prev) => [...prev, { word: currentWord, durationMs: duration }]);
 
     setIsAnalysing(true);
@@ -258,6 +271,7 @@ export default function WritingExercise() {
         analysisStatus: 'pending',
         analysisResult: {},
       });
+      setCurrentSampleId(sampleDoc.id);
 
       const apiPromise = analyzeHandwriting({
         sampleId: sampleDoc.id,
@@ -274,7 +288,7 @@ export default function WritingExercise() {
           new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ANALYSIS_TIMEOUT_MS))
         ]);
       } catch {
-        // Keep the student flow moving while async analysis finishes server-side.
+        // Handle promise race timeout or API error silently
       }
 
       setIsAnalysing(false);
@@ -300,27 +314,12 @@ export default function WritingExercise() {
       };
 
       setLetterFeedback(feedback);
-      setLetterResults((prev) => {
-        const next = [...prev, feedback];
-        letterResultsRef.current = next;
-        return next;
-      });
-
-      setTimeout(() => {
-        setLetterFeedback(null);
-        if (isLastWord) {
-          finishSession(duration);
-        } else {
-          setCurrentIndex((prev) => prev + 1);
-        }
-      }, 2000);
+      letterResultsRef.current = [...letterResultsRef.current, feedback];
     } catch (error) {
       console.error('Submission failed:', error.message);
       setIsAnalysing(false);
       if (isLastWord) finishSession(duration);
-      else {
-        setCurrentIndex((prev) => prev + 1);
-      }
+      else setCurrentIndex((prev) => prev + 1);
     } finally {
       submitInFlightRef.current = false;
     }
@@ -328,38 +327,23 @@ export default function WritingExercise() {
 
   const exerciseContent = (
     <div className="w-full relative">
-      {(modelsLoading || cameraReady) && (
-        <div className="absolute right-2 top-2 z-30">
-          <div className="h-[90px] w-[120px] overflow-hidden rounded-lg border border-border bg-card shadow-sm">
-            {modelsLoading ? (
-              <div className="h-full w-full flex items-center justify-center">
-                <span className="loading loading-spinner loading-sm text-primary" />
-              </div>
-            ) : (
-              <video ref={videoRef} muted playsInline className="h-full w-full object-cover" />
-            )}
-          </div>
-          {cameraReady && dominantEmotion && (
-            <p className="mt-1 text-xs font-medium text-foreground text-right">
-              {EMOTION_EMOJI[dominantEmotion] || '😐'} {dominantEmotion}
-            </p>
-          )}
-        </div>
-      )}
-
       {/* Analysing Spinner Overlay */}
       {isAnalysing && (
-        <div className="absolute inset-0 z-40 bg-background/60 backdrop-blur-sm flex items-center justify-center rounded-2xl animate-fade-in">
-          <div className="text-center">
-            <div className="w-12 h-12 border-4 border-primary/30 border-t-primary rounded-full animate-spin mx-auto mb-4" />
-            <p className="font-bold text-primary animate-pulse text-lg">Analysing...</p>
+        <div className="absolute inset-0 z-40 bg-background/60 backdrop-blur-md flex items-center justify-center rounded-2xl animate-fade-in">
+          <div className="text-center premium-card p-12 animate-scale-in">
+            <div className="relative w-20 h-20 mx-auto mb-6">
+              <div className="absolute inset-0 border-4 border-primary/20 rounded-full" />
+              <div className="absolute inset-0 border-4 border-t-primary rounded-full animate-spin" />
+              <div className="absolute inset-0 bg-primary/5 rounded-full animate-pulse-gentle" />
+            </div>
+            <p className="font-black text-primary text-xl tracking-wide animate-shimmer bg-clip-text text-transparent">Analysing...</p>
           </div>
         </div>
       )}
 
       {/* Feedback Overlay */}
       {letterFeedback && (
-        <div className="absolute inset-0 z-40 bg-background/80 backdrop-blur-md flex items-center justify-center rounded-2xl animate-scale-in">
+        <div className="absolute inset-0 z-40 bg-background/80 backdrop-blur-md flex items-center justify-center rounded-2xl animate-fade-in px-4">
           {(() => {
             const profile = letterFeedback.cognitiveProfile || {};
             const letterAccuracy = Math.round(clamp01(1 - (profile.reversalRisk ?? 0.5), 0.5) * 100);
@@ -367,51 +351,112 @@ export default function WritingExercise() {
             const interpretationLine = firstSentence(letterFeedback.geminiInterpretation) || letterFeedback.note || 'Great effort. Keep building skills.';
 
             return (
-          <div className={`p-8 rounded-3xl border-4 text-center max-w-xs w-full shadow-2xl ${
-            letterFeedback.risk_level === 'low' ? 'bg-success/10 border-success text-success' :
-            letterFeedback.risk_level === 'medium' ? 'bg-warning/10 border-warning text-warning' :
-            letterFeedback.risk_level === 'high' ? 'bg-destructive/10 border-destructive text-destructive' :
-            'bg-muted border-muted text-muted-foreground'
-          }`}>
-            <span className="text-6xl mb-4 block animate-bounce">
-              {letterFeedback.risk_level === 'low' ? '🌟' : 
-               letterFeedback.risk_level === 'medium' ? '👍' : 
-               letterFeedback.risk_level === 'high' ? '💪' : '⏳'}
-            </span>
-            <h3 className="text-2xl font-black mb-2">
-              {letterFeedback.risk_level === 'low' ? `Great ${letterFeedback.letter}!` :
-              letterFeedback.risk_level === 'medium' ? 'Building skills!' :
-              letterFeedback.risk_level === 'high' ? `Keep working on ${letterFeedback.letter}` :
-               'Working...'}
-            </h3>
-            <p className="text-sm font-medium opacity-90 mb-4 line-clamp-2">
-              {interpretationLine}
-            </p>
+              <div className={`p-8 premium-card text-center max-w-sm w-full animate-scale-in overflow-hidden relative ${
+                letterFeedback.risk_level === 'low' ? 'border-success/30' :
+                letterFeedback.risk_level === 'medium' ? 'border-warning/30' :
+                letterFeedback.risk_level === 'high' ? 'border-destructive/30' :
+                'border-muted'
+              }`}>
+                <div className={`absolute top-0 left-0 w-full h-1.5 ${
+                  letterFeedback.risk_level === 'low' ? 'bg-success' :
+                  letterFeedback.risk_level === 'medium' ? 'bg-warning' :
+                  letterFeedback.risk_level === 'high' ? 'bg-destructive' :
+                  'bg-muted'
+                }`} />
 
-            <div className="space-y-2 text-left">
-              <div>
-                <div className="flex items-center justify-between text-xs font-semibold mb-1">
-                  <span>Letter accuracy</span>
-                  <span>{letterAccuracy}%</span>
-                </div>
-                <div className="w-full h-2 rounded-full bg-white/40 overflow-hidden">
-                  <div className="h-full bg-white" style={{ width: `${letterAccuracy}%` }} />
-                </div>
-              </div>
+                <span className="text-7xl mb-6 block animate-float">
+                  {letterFeedback.risk_level === 'low' ? '🌟' : 
+                   letterFeedback.risk_level === 'medium' ? '👍' : 
+                   letterFeedback.risk_level === 'high' ? '💪' : '⏳'}
+                </span>
+                <h3 className="text-2xl font-black mb-2">
+                  {letterFeedback.risk_level === 'low' ? `Great ${letterFeedback.letter}!` :
+                  letterFeedback.risk_level === 'medium' ? 'Building skills!' :
+                  letterFeedback.risk_level === 'high' ? `Keep working on ${letterFeedback.letter}` :
+                   'Working...'}
+                </h3>
+                <p className="text-sm font-medium opacity-90 mb-6 line-clamp-2">
+                  {interpretationLine}
+                </p>
 
-              <div>
-                <div className="flex items-center justify-between text-xs font-semibold mb-1">
-                  <span>Pen confidence</span>
-                  <span>{penConfidence}%</span>
+                <div className="space-y-4 text-left mb-8">
+                  <div>
+                    <div className="flex items-center justify-between text-xs font-semibold mb-1">
+                      <span>Letter accuracy</span>
+                      <span>{letterAccuracy}%</span>
+                    </div>
+                    <div className="w-full h-2 rounded-full bg-white/40 overflow-hidden">
+                      <div className="h-full bg-white" style={{ width: `${letterAccuracy}%` }} />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between text-xs font-semibold mb-1">
+                      <span>Pen confidence</span>
+                      <span>{penConfidence}%</span>
+                    </div>
+                    <div className="w-full h-2 rounded-full bg-white/40 overflow-hidden">
+                      <div className="h-full bg-white" style={{ width: `${penConfidence}%` }} />
+                    </div>
+                  </div>
                 </div>
-                <div className="w-full h-2 rounded-full bg-white/40 overflow-hidden">
-                  <div className="h-full bg-white" style={{ width: `${penConfidence}%` }} />
-                </div>
+
+                <button 
+                  onClick={() => {
+                    setLetterFeedback(null);
+                    setShowEmotionCheck(true);
+                  }}
+                  className="w-full py-4 rounded-2xl bg-white text-foreground font-black text-lg flex items-center justify-center gap-2 shadow-lg hover:scale-105 active:scale-95 transition-all"
+                  style={{ color: 'inherit' }}
+                >
+                  Continue
+                  <ArrowRight className="w-6 h-6" />
+                </button>
               </div>
-            </div>
-          </div>
             );
           })()}
+        </div>
+      )}
+
+      {/* Emotion Check-in Overlay */}
+      {showEmotionCheck && (
+        <div className="absolute inset-0 z-40 bg-background/90 backdrop-blur-lg flex items-center justify-center rounded-2xl animate-fade-in px-4">
+          <div className="text-center p-10 premium-card max-w-sm w-full animate-float">
+            <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-6">
+              <Heart className="w-8 h-8 text-primary animate-pulse-gentle" />
+            </div>
+            <h2 className="text-2xl font-black text-foreground mb-8">How did that feel?</h2>
+            <div className="flex items-center justify-center gap-6">
+              <button 
+                onClick={() => handleEmotionSelect('happy')}
+                className="group flex flex-col items-center gap-2 transition-transform hover:scale-125 active:scale-90"
+              >
+                <span className="text-7xl drop-shadow-lg">😊</span>
+                <span className="text-sm font-bold text-success opacity-0 group-hover:opacity-100 transition-opacity">Happy</span>
+              </button>
+              <button 
+                onClick={() => handleEmotionSelect('okay')}
+                className="group flex flex-col items-center gap-2 transition-transform hover:scale-125 active:scale-90"
+              >
+                <span className="text-7xl drop-shadow-lg">😐</span>
+                <span className="text-sm font-bold text-warning opacity-0 group-hover:opacity-100 transition-opacity">Okay</span>
+              </button>
+              <button 
+                onClick={() => handleEmotionSelect('hard')}
+                className="group flex flex-col items-center gap-2 transition-transform hover:scale-125 active:scale-90"
+              >
+                <span className="text-7xl drop-shadow-lg">😟</span>
+                <span className="text-sm font-bold text-destructive opacity-0 group-hover:opacity-100 transition-opacity">Hard</span>
+              </button>
+            </div>
+            
+            {/* Skip Option */}
+            <button 
+              onClick={() => handleEmotionSelect(null)}
+              className="mt-12 text-sm text-muted-foreground font-medium hover:text-foreground transition-all hover:tracking-widest"
+            >
+              Skip this part
+            </button>
+          </div>
         </div>
       )}
 
@@ -419,7 +464,7 @@ export default function WritingExercise() {
       <div className="text-center mb-10">
         <div className="mb-5 flex flex-wrap items-center justify-center gap-2">
           <span className="badge badge-outline">Simple practice</span>
-          <span className="badge badge-ghost">2 letters only</span>
+          <span className="badge badge-ghost">3 letters only</span>
         </div>
 
         <div className="flex justify-center gap-2 mb-6">
@@ -454,7 +499,7 @@ export default function WritingExercise() {
         key={currentIndex}
         prompt={currentWord}
         onSubmit={handleSubmit}
-        disabled={isAnalysing || !!letterFeedback}
+        disabled={isAnalysing || !!letterFeedback || showEmotionCheck}
       />
     </div>
   );

@@ -1,5 +1,5 @@
 import { setCors } from '../lib/cors.js';
-import { adminDb } from '../lib/firebaseAdmin.js';
+import { adminDb, adminStorage } from '../lib/firebaseAdmin.js';
 import { verifyToken } from '../lib/auth.js';
 import { FieldValue } from 'firebase-admin/firestore';
 import { generateHandwritingInterpretation } from '../lib/genAI.js';
@@ -139,17 +139,23 @@ export default async function handler(req, res) {
     const resolvedLetter = normalizeLetter(letter || strokeMetadata?.currentLetter);
     const normalizedStrokeMetadata = normalizeStrokeMetadata(strokeMetadata || {}, resolvedLetter);
 
-    // Upload image to Firebase Storage for ML service to download
-    const bucket = adminStorage.bucket('neurolearn-tutor-app.appspot.com');
-    const file = bucket.file(`samples/${sampleId}.png`);
-    const buffer = Buffer.from(imageBase64.split(',')[1], 'base64');
-    await file.save(buffer, { contentType: 'image/png' });
-    
-    // Get a signed URL for the ML service (expires in 10 mins)
-    const [imageUrl] = await file.getSignedUrl({
-      action: 'read',
-      expires: Date.now() + 10 * 60 * 1000
-    });
+    let imageUrl = null;
+    try {
+      // Upload image to Firebase Storage for ML service to download (optional fallback)
+      const bucket = adminStorage.bucket();
+      const file = bucket.file(`samples/${sampleId}.png`);
+      const buffer = Buffer.from(imageBase64.split(',')[1], 'base64');
+      await file.save(buffer, { contentType: 'image/png' });
+      
+      // Get a signed URL
+      const [signedUrl] = await file.getSignedUrl({
+        action: 'read',
+        expires: Date.now() + 10 * 60 * 1000
+      });
+      imageUrl = signedUrl;
+    } catch (storageErr) {
+      console.warn('Firebase Storage upload failed, proceeding with base64 only:', storageErr.message);
+    }
 
     // Update sample status
     await adminDb.collection('handwritingSamples').doc(sampleId).update({
@@ -164,8 +170,6 @@ export default async function handler(req, res) {
       .filter((url, idx, arr) => arr.indexOf(url) === idx);
 
     let mlData = null;
-    let mlError = null;
-    let usedMlUrl = null;
 
     for (const mlServiceUrl of mlUrls) {
       const timeout = withTimeout(35000); // Increased timeout for download
@@ -179,6 +183,7 @@ export default async function handler(req, res) {
           signal: timeout.signal,
           body: JSON.stringify({
             image_url: imageUrl,
+            image_base64: imageBase64,
             sample_id: sampleId,
             stroke_metadata: normalizedStrokeMetadata,
           }),
@@ -186,15 +191,12 @@ export default async function handler(req, res) {
         if (!response.ok) {
           const errText = await response.text();
           console.error(`ML service error from ${mlServiceUrl}:`, response.status, errText);
-          mlError = new Error(`ML ${response.status}`);
           continue;
         }
 
         mlData = await response.json();
-        usedMlUrl = mlServiceUrl;
         break;
       } catch (err) {
-        mlError = err;
         console.error(`ML service unavailable at ${mlServiceUrl}:`, err.message);
       } finally {
         timeout.finalize();

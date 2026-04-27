@@ -1,15 +1,16 @@
 import { Link, useNavigate } from 'react-router-dom';
 import useCurrentUser from '@/hooks/useCurrentUser';
 import useScreeningStatus from '@/hooks/useScreeningStatus';
-import { PenTool, BookOpen, Star, LogOut } from 'lucide-react';
+import { PenTool, BookOpen, Star, LogOut, User } from 'lucide-react';
 import { signOut } from 'firebase/auth';
 import { auth } from '@/services/firebase';
 import { useEffect, useState } from 'react';
 import api from '@/services/api';
+import { formatDate } from '@/utils/dateUtils';
 
 export default function StudentHome() {
   const { user, loading: authLoading } = useCurrentUser();
-  const { completed, loading: screeningLoading } = useScreeningStatus(user?.uid);
+  const { completed, needsRetest, nextScreeningDueAt, loading: screeningLoading } = useScreeningStatus(user?.uid);
   const navigate = useNavigate();
   const [lessonText, setLessonText] = useState("");
   const [dynamicWords, setDynamicWords] = useState([]);
@@ -68,6 +69,13 @@ export default function StudentHome() {
             <span className="font-bold text-lg text-foreground">NeuroLearn</span>
           </div>
           <div className="flex items-center gap-4">
+            <Link 
+              to="/student/profile"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 text-primary text-sm font-bold hover:bg-primary/20 transition-all"
+            >
+              <User className="w-4 h-4" />
+              Profile
+            </Link>
             <span className="text-sm text-muted-foreground">
               Hi, {user?.displayName?.split(' ')[0] || 'Student'}! 👋
             </span>
@@ -91,6 +99,17 @@ export default function StudentHome() {
           <p className="text-lg text-muted-foreground">
             Choose an activity to get started
           </p>
+
+          {nextScreeningDueAt && (
+            <div className="mt-5 inline-flex flex-col gap-1 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm">
+              <span className="font-semibold text-primary">Weekly screening schedule</span>
+              <span className="text-muted-foreground">
+                {needsRetest
+                  ? 'Your check-in is due now. Please take the screening again.'
+                  : `Your next check-in is on ${formatDate(nextScreeningDueAt)}.`}
+              </span>
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

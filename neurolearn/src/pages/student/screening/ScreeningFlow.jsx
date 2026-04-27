@@ -10,37 +10,23 @@ const VISUAL_QUESTIONS = [
   { target: 'b', options: ['d', 'b', 'p', 'q'], correct: 'b' },
   { target: 'd', options: ['b', 'd', 'q', 'p'], correct: 'd' },
   { target: 'p', options: ['q', 'b', 'p', 'd'], correct: 'p' },
-  { target: 'q', options: ['p', 'q', 'd', 'b'], correct: 'q' },
-  { target: 'n', options: ['u', 'm', 'n', 'h'], correct: 'n' },
-  { target: 'u', options: ['n', 'u', 'm', 'v'], correct: 'u' },
-  { target: 'b', options: ['p', 'd', 'q', 'b'], correct: 'b' },
-  { target: 'd', options: ['d', 'b', 'p', 'q'], correct: 'd' },
-  { target: 'was', options: ['saw', 'was', 'maw', 'waz'], correct: 'was' },
-  { target: 'saw', options: ['was', 'saw', 'sow', 'sap'], correct: 'saw' },
-  { target: 'no', options: ['on', 'no', 'mo', 'nu'], correct: 'no' },
-  { target: 'on', options: ['no', 'on', 'om', 'an'], correct: 'on' },
 ];
 
 const PHONOLOGY_QUESTIONS = [
   { question: 'Which word starts with the sound /b/?', options: ['dog', 'bed', 'cat'], correct: 'bed', category: 'initial_sounds' },
   { question: 'Which word starts with the sound /d/?', options: ['pig', 'sun', 'dig'], correct: 'dig', category: 'initial_sounds' },
   { question: 'Which word rhymes with CAT?', options: ['hat', 'dog', 'bin'], correct: 'hat', category: 'rhyming' },
-  { question: 'Which word rhymes with PIG?', options: ['fan', 'big', 'top'], correct: 'big', category: 'rhyming' },
-  { question: 'Which word has 3 sounds?', options: ['at', 'stop', 'sun'], correct: 'sun', category: 'phoneme_counting' },
-  { question: 'Tap the word that sounds like it starts with /p/', options: ['ball', 'pen', 'door'], correct: 'pen', category: 'initial_sounds' },
-  { question: 'Which word ends with the sound /t/?', options: ['sit', 'run', 'bed'], correct: 'sit', category: 'final_sounds' },
-  { question: 'Which word rhymes with LOG?', options: ['pin', 'dog', 'hat'], correct: 'dog', category: 'rhyming' },
-  { question: 'Which word starts with the same sound as BIG?', options: ['ball', 'dig', 'fig'], correct: 'ball', category: 'initial_sounds' },
-  { question: 'Which word has the same middle sound as HIT?', options: ['hot', 'bit', 'hat'], correct: 'bit', category: 'final_sounds' },
 ];
 
-const TRACE_LETTERS = ['B', 'D', 'p', 'q'];
+const TRACE_LETTERS = ['B', 'D', 'C'];
 
 const STEP_TITLES = [
   'Step 1 of 3 — Letter Recognition',
   'Step 2 of 3 — Letter Tracing',
   'Step 3 of 3 — Sound Awareness',
 ];
+
+const SCREENING_FREQUENCY_DAYS = 7;
 
 const RISK_PATH_HINT = {
   reversal_reinforcement: 'Gentle focus: reinforce similar letter orientation through side-by-side tracing.',
@@ -59,6 +45,12 @@ function clamp01(value, fallback = 0) {
 function avg(values = []) {
   if (!values.length) return 0;
   return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function addDaysIso(baseDate, days) {
+  const next = new Date(baseDate);
+  next.setDate(next.getDate() + days);
+  return next.toISOString();
 }
 
 function toDataURL(blob) {
@@ -475,11 +467,15 @@ export default function ScreeningFlow() {
     const overallRiskBand = getOverallRiskBand(module1, module2, module3);
     const recommendedPath = getRecommendedPath(module1, module2, module3);
 
-    const completedAt = new Date().toISOString();
+    const completedAtDate = new Date();
+    const completedAt = completedAtDate.toISOString();
+    const nextScreeningDueAt = addDaysIso(completedAtDate, SCREENING_FREQUENCY_DAYS);
 
     const baselineProfile = {
       screeningVersion: '1.0',
       completedAt,
+      screeningFrequencyDays: SCREENING_FREQUENCY_DAYS,
+      nextScreeningDueAt,
       modulesCompleted: ['visual_discrimination', 'letter_tracing', 'phonological_awareness'],
       visualDiscrimination: {
         accuracy: module1.accuracy,
@@ -508,12 +504,21 @@ export default function ScreeningFlow() {
 
       await setDoc(doc(db, 'users', user.uid), {
         screeningCompleted: true,
+        screeningCompletedAt: completedAt,
+        nextScreeningDueAt,
+        screeningSchedule: {
+          frequencyDays: SCREENING_FREQUENCY_DAYS,
+          lastCompletedAt: completedAt,
+          nextDueAt: nextScreeningDueAt,
+        },
         baselineProfile,
       }, { merge: true });
 
       await addDoc(collection(db, 'screeningResults'), {
         studentId: user.uid,
         completedAt: serverTimestamp(),
+        nextScreeningDueAt,
+        screeningFrequencyDays: SCREENING_FREQUENCY_DAYS,
         baselineProfile,
         moduleResults: {
           visualDiscrimination: module1,
@@ -522,7 +527,10 @@ export default function ScreeningFlow() {
         },
       });
 
-      navigate('/student/screening/complete', { replace: true });
+      navigate('/student/screening/complete', {
+        replace: true,
+        state: { nextScreeningDueAt },
+      });
     } catch (error) {
       console.error('Failed to save screening:', error.message);
       setSaveError('We could not save your screening yet. Please try again in a moment.');

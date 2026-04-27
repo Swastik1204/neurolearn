@@ -1,4 +1,4 @@
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import useStudentData from '@/hooks/useStudentData';
 import { formatDate } from '@/utils/dateUtils';
 import Disclaimer from '@/components/Disclaimer';
@@ -24,6 +24,32 @@ const profileColor = {
   strokeConfidence: '#F4A728',
   reversalRisk: '#DC3545',
 };
+
+function trendDirection(timeline = []) {
+  if (!Array.isArray(timeline) || timeline.length < 2) return 'stable';
+  const first = timeline[0];
+  const last = timeline[timeline.length - 1];
+  const firstRisk = Number(first?.reversalRisk ?? 0.5);
+  const lastRisk = Number(last?.reversalRisk ?? 0.5);
+  if (lastRisk < firstRisk - 0.04) return 'improving';
+  if (lastRisk > firstRisk + 0.04) return 'declining';
+  return 'stable';
+}
+
+function chartTooltip({ active, payload, label }) {
+  if (!active || !payload || !payload.length) return null;
+  const rows = payload.filter(Boolean);
+  return (
+    <div className="rounded-lg border border-border bg-card px-3 py-2 shadow-md">
+      <p className="text-xs font-semibold text-foreground mb-1">{label}</p>
+      {rows.map((row) => (
+        <p key={row.dataKey} className="text-xs" style={{ color: row.color }}>
+          {row.name}: {Math.round(Number(row.value || 0) * 100)}%
+        </p>
+      ))}
+    </div>
+  );
+}
 
 const clamp01 = (value, fallback = 0.5) => {
   const num = Number(value);
@@ -70,6 +96,7 @@ export default function OverviewTab({ studentId }) {
   const overallProfile = summary?.overallProfile || null;
   const screeningBaseline = summary?.screeningBaseline || null;
   const baselineProfile = screeningBaseline?.baselineProfile || null;
+  const screeningSchedule = summary?.screeningSchedule || null;
   const timeline = (summary?.profileTimeline || []).map((item) => ({
     ...item,
     label: formatDate(item.date),
@@ -92,7 +119,7 @@ export default function OverviewTab({ studentId }) {
   return (
     <div className="space-y-6 animate-fade-in">
       {baselineProfile && (
-        <div className="card bg-base-100 border border-border shadow-sm">
+        <div className="premium-card animate-slide-up">
           <div className="card-body">
             <div className="flex items-center justify-between gap-3">
               <h3 className="font-semibold text-foreground">Baseline Screening</h3>
@@ -120,6 +147,13 @@ export default function OverviewTab({ studentId }) {
                   {String(baselineProfile?.writingProfile?.overallRiskBand || 'moderate').toUpperCase()}
                 </span>
               </div>
+
+              {screeningSchedule?.nextDueAt && (
+                <div className="flex items-center justify-between rounded-lg bg-muted/40 px-3 py-2">
+                  <span className="text-muted-foreground">Next weekly check-in</span>
+                  <span className="font-semibold text-foreground">{asDateString(screeningSchedule.nextDueAt)}</span>
+                </div>
+              )}
             </div>
 
             {(baselineProfile?.visualDiscrimination?.confusedPairs || []).length > 0 && (
@@ -143,7 +177,9 @@ export default function OverviewTab({ studentId }) {
         </div>
       )}
 
-      <div className="card bg-base-100 border border-border shadow-sm">
+
+
+      <div className="premium-card animate-slide-up" style={{ animationDelay: '100ms' }}>
         <div className="card-body">
           <div className="flex items-center justify-between gap-3">
             <h3 className="font-semibold text-foreground">Overall Cognitive Profile</h3>
@@ -181,34 +217,70 @@ export default function OverviewTab({ studentId }) {
         </div>
       </div>
 
-      <div className="card bg-base-100 border border-border shadow-sm">
+      <div className="premium-card animate-slide-up" style={{ animationDelay: '200ms' }}>
         <div className="card-body">
-          <h3 className="font-semibold text-foreground mb-2">Progress Trend</h3>
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+            <h3 className="font-semibold text-foreground">Progress Trend</h3>
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2 py-1 rounded-full border border-primary/30 bg-primary/10 text-primary">
+              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-live-dot" />
+              Live trend
+            </span>
+          </div>
+
+          {timeline.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-3">
+              <span className="text-xs px-2 py-1 rounded-full border border-border bg-muted/40 text-muted-foreground">
+                Samples: {timeline.length}
+              </span>
+              <span className={`text-xs px-2 py-1 rounded-full border ${trendDirection(timeline) === 'improving' ? 'text-success border-success/30 bg-success/10' : trendDirection(timeline) === 'declining' ? 'text-destructive border-destructive/30 bg-destructive/10' : 'text-warning border-warning/30 bg-warning/10'}`}>
+                Trend: {trendDirection(timeline)}
+              </span>
+            </div>
+          )}
+
           {timeline.length === 0 ? (
             <div className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
               No sessions recorded yet. Ask the student to complete a writing exercise.
             </div>
           ) : (
-            <div style={{ minHeight: '280px' }}>
+            <div className="chart-grid-bg p-2" style={{ minHeight: '290px' }}>
               <ResponsiveContainer width="100%" minHeight={280}>
-                <LineChart data={timeline} margin={{ top: 8, right: 20, left: 0, bottom: 8 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#E2E1D5" />
-                  <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#6B6B80' }} stroke="#E2E1D5" />
-                  <YAxis domain={[0, 1]} tick={{ fontSize: 11, fill: '#6B6B80' }} stroke="#E2E1D5" />
-                  <Tooltip />
-                  <Legend />
-                  <Line type="monotone" dataKey="writingMotor" name="Writing strength" stroke={profileColor.writingMotor} strokeWidth={2} dot={{ r: 3 }} />
-                  <Line type="monotone" dataKey="letterConsistency" name="Letter consistency" stroke={profileColor.letterConsistency} strokeWidth={2} dot={{ r: 3 }} />
-                  <Line type="monotone" dataKey="strokeConfidence" name="Pen confidence" stroke={profileColor.strokeConfidence} strokeWidth={2} dot={{ r: 3 }} />
-                  <Line type="monotone" dataKey="reversalRisk" name="Reversal pressure" stroke={profileColor.reversalRisk} strokeWidth={2} dot={{ r: 3 }} />
-                </LineChart>
+                <AreaChart data={timeline} margin={{ top: 8, right: 20, left: 0, bottom: 8 }}>
+                  <defs>
+                    <linearGradient id="colorMotor" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={profileColor.writingMotor} stopOpacity={0.1}/>
+                      <stop offset="95%" stopColor={profileColor.writingMotor} stopOpacity={0}/>
+                    </linearGradient>
+                    <linearGradient id="colorConsistency" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={profileColor.letterConsistency} stopOpacity={0.1}/>
+                      <stop offset="95%" stopColor={profileColor.letterConsistency} stopOpacity={0}/>
+                    </linearGradient>
+                    <linearGradient id="colorConfidence" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={profileColor.strokeConfidence} stopOpacity={0.1}/>
+                      <stop offset="95%" stopColor={profileColor.strokeConfidence} stopOpacity={0}/>
+                    </linearGradient>
+                    <linearGradient id="colorRisk" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={profileColor.reversalRisk} stopOpacity={0.1}/>
+                      <stop offset="95%" stopColor={profileColor.reversalRisk} stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="4 4" stroke="#E2E1D5" vertical={false} />
+                  <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#6B6B80' }} stroke="#E2E1D5" axisLine={false} tickLine={false} />
+                  <YAxis domain={[0, 1]} tick={{ fontSize: 11, fill: '#6B6B80' }} stroke="#E2E1D5" axisLine={false} tickLine={false} />
+                  <Tooltip content={chartTooltip} />
+                  <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px', fontSize: '12px' }} />
+                  <Area type="monotone" dataKey="writingMotor" name="Writing strength" stroke={profileColor.writingMotor} strokeWidth={2.5} fillOpacity={1} fill="url(#colorMotor)" isAnimationActive animationDuration={1200} />
+                  <Area type="monotone" dataKey="letterConsistency" name="Letter consistency" stroke={profileColor.letterConsistency} strokeWidth={2.5} fillOpacity={1} fill="url(#colorConsistency)" isAnimationActive animationDuration={1200} />
+                  <Area type="monotone" dataKey="strokeConfidence" name="Pen confidence" stroke={profileColor.strokeConfidence} strokeWidth={2.5} fillOpacity={1} fill="url(#colorConfidence)" isAnimationActive animationDuration={1200} />
+                  <Area type="monotone" dataKey="reversalRisk" name="Reversal pressure" stroke={profileColor.reversalRisk} strokeWidth={2.5} fillOpacity={1} fill="url(#colorRisk)" isAnimationActive animationDuration={1200} />
+                </AreaChart>
               </ResponsiveContainer>
             </div>
           )}
         </div>
       </div>
 
-      <div className="card bg-base-100 border border-border shadow-sm">
+      <div className="premium-card animate-slide-up" style={{ animationDelay: '300ms' }}>
         <div className="card-body">
           <h3 className="font-semibold text-foreground mb-2">Letter Breakdown</h3>
           {Object.keys(letterBreakdown).length === 0 ? (
@@ -224,9 +296,36 @@ export default function OverviewTab({ studentId }) {
                   <p className="text-sm text-muted-foreground">
                     Reversal pressure: {Math.round(clamp01(payload.averageCognitiveProfile?.reversalRisk) * 100)}%
                   </p>
-                  <p className="text-sm text-muted-foreground">
+                  <p className="text-sm text-muted-foreground mb-3">
                     Letter form: {Math.round(Number(payload.averageScores?.letterFormScore || 0))}/100
                   </p>
+                  
+                  {payload.emotions && (
+                    <div className="space-y-1.5 border-t border-border/50 pt-3">
+                      <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2">Feeling during practice</p>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs w-4">😊</span>
+                        <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                          <div className="h-full bg-success" style={{ width: `${(payload.emotions.happy / payload.count) * 100}%` }} />
+                        </div>
+                        <span className="text-[10px] font-medium w-4 text-right">{payload.emotions.happy}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs w-4">😐</span>
+                        <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                          <div className="h-full bg-warning" style={{ width: `${(payload.emotions.okay / payload.count) * 100}%` }} />
+                        </div>
+                        <span className="text-[10px] font-medium w-4 text-right">{payload.emotions.okay}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs w-4">😟</span>
+                        <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                          <div className="h-full bg-destructive" style={{ width: `${(payload.emotions.hard / payload.count) * 100}%` }} />
+                        </div>
+                        <span className="text-[10px] font-medium w-4 text-right">{payload.emotions.hard}</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -234,7 +333,7 @@ export default function OverviewTab({ studentId }) {
         </div>
       </div>
 
-      <div className="card bg-base-100 border border-border shadow-sm">
+      <div className="premium-card animate-slide-up" style={{ animationDelay: '400ms' }}>
         <div className="card-body">
           <h3 className="font-semibold text-foreground mb-2">Recent Sessions</h3>
           {recentSessions.length === 0 ? (

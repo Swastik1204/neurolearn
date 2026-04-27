@@ -1,13 +1,15 @@
-# NeuroLearn ML Service — Models Directory
+# NeuroLearn ML Service - Models Directory
 
-This directory stores trained model files.
+This directory stores the current training outputs used by the local ML service.
 
-## Files
-- `classifier.pkl` — Trained RandomForest classifier (auto-generated on first run if missing)
+## Active Artifacts
+- `dyslexia_classifier.pkl` - RandomForest classifier used by `main.py`
+- `feature_scaler.pkl` - StandardScaler for feature normalization
+- `model_metadata.json` - model version and training metrics
+- `dyslexia_cnn.h5` - Keras CNN checkpoint
+- `dyslexia_cnn_best.h5` - best Keras CNN checkpoint
+- `dyslexia_cnn.tflite` - TFLite export
 
-## Training
-The classifier ships with a synthetic training set. To train on real data:
-1. Collect labeled handwriting samples (minimum 500 per class)
-2. Run the feature extraction pipeline on each sample
-3. Train with `sklearn.ensemble.RandomForestClassifier`
-4. Save with `joblib.dump(model, "classifier.pkl")`
+## Notes
+- The API runtime currently loads `dyslexia_classifier.pkl` and `feature_scaler.pkl`.
+- Re-training should update these files consistently with `train.py` outputs.

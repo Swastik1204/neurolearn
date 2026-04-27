@@ -67,6 +67,7 @@ function getApp() {
     if (credential) {
       return initializeApp({
         credential,
+        storageBucket: process.env.FIREBASE_STORAGE_BUCKET || (serviceAccount.project_id + '.appspot.com')
       });
     }
   }

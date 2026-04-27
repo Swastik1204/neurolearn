@@ -9,6 +9,7 @@ import ScreeningFlow from '@/pages/student/screening/ScreeningFlow';
 import ScreeningComplete from '@/pages/student/screening/ScreeningComplete';
 import GuardianDashboard from '@/pages/guardian/GuardianDashboard';
 import TeacherDashboard from '@/pages/teacher/TeacherDashboard';
+import StudentProfile from '@/pages/student/StudentProfile';
 
 const router = createBrowserRouter([
   {
@@ -62,6 +63,14 @@ const router = createBrowserRouter([
     element: (
       <AuthGuard allowedRoles={['student']}>
         <ScreeningComplete />
+      </AuthGuard>
+    ),
+  },
+  {
+    path: '/student/profile',
+    element: (
+      <AuthGuard allowedRoles={['student']}>
+        <StudentProfile />
       </AuthGuard>
     ),
   },

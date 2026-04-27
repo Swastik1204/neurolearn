@@ -25,7 +25,7 @@ export default defineConfig({
     ],
   },
   optimizeDeps: {
-    include: ['long', 'seedrandom'],
+    include: ['long'],
     exclude: ['face-api.js'],
   },
   build: {
@@ -35,10 +35,8 @@ export default defineConfig({
         manualChunks(id) {
           if (id.includes('node_modules')) {
             if (id.includes('firebase')) return 'firebase';
-            if (id.includes('@google/generative-ai')) return 'gemini';
             if (id.includes('recharts')) return 'charts';
             if (id.includes('jspdf') || id.includes('html2canvas')) return 'pdf';
-            if (id.includes('@tensorflow')) return 'tensorflow';
           }
         }
       }

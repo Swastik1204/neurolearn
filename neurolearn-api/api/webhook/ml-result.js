@@ -27,6 +27,13 @@ export default async function handler(req, res) {
       geminiInterpretation,
     } = req.body;
 
+    if (sample_id) {
+      const sampleSnap = await adminDb.collection('handwritingSamples').doc(sample_id).get();
+      if (sampleSnap.exists && sampleSnap.data()?.analysisStatus === 'complete') {
+        return res.status(200).json({ success: true, message: 'Already completed synchronously' });
+      }
+    }
+
     if (!sample_id || !scores) {
       return res.status(400).json({ error: 'Missing required fields: sample_id, scores' });
     }

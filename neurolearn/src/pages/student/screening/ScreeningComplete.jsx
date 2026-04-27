@@ -1,8 +1,17 @@
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import Disclaimer from '@/components/Disclaimer';
+import useCurrentUser from '@/hooks/useCurrentUser';
+import useScreeningStatus from '@/hooks/useScreeningStatus';
+import { formatDate } from '@/utils/dateUtils';
 
 export default function ScreeningComplete() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const { user } = useCurrentUser();
+  const { nextScreeningDueAt } = useScreeningStatus(user?.uid);
+
+  const routeDueAt = location.state?.nextScreeningDueAt ? new Date(location.state.nextScreeningDueAt) : null;
+  const dueAt = routeDueAt || nextScreeningDueAt;
 
   return (
     <div className="min-h-screen bg-background student-view px-6 py-10">
@@ -13,6 +22,12 @@ export default function ScreeningComplete() {
           <p className="text-lg text-muted-foreground mb-8">
             Your guardian can now see your learning profile.
           </p>
+
+          {dueAt && (
+            <p className="text-sm text-muted-foreground mb-6">
+              Your next weekly check-in is scheduled for <span className="font-semibold text-foreground">{formatDate(dueAt)}</span>.
+            </p>
+          )}
 
           <button
             type="button"

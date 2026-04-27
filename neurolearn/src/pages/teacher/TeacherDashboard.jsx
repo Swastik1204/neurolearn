@@ -7,7 +7,7 @@ import AssignExercise from './AssignExercise';
 import RiskDistribution from '@/components/charts/RiskDistribution';
 import OverviewTab from '@/pages/guardian/OverviewTab';
 import {
-  BookOpen, LogOut, ClipboardList, Users, UserPlus, X
+  BookOpen, LogOut, ClipboardList, Users, UserPlus, X, Check
 } from 'lucide-react';
 import StudentListPanel from '@/components/StudentListPanel';
 
@@ -43,6 +43,20 @@ function scoreToBand(riskScore) {
   return 'low';
 }
 
+function parseDateLike(value) {
+  if (!value) return null;
+  if (typeof value.toDate === 'function') return value.toDate();
+  if (value._seconds !== undefined) return new Date(value._seconds * 1000);
+  if (value.seconds !== undefined) return new Date(value.seconds * 1000);
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function shortDate(value) {
+  const parsed = parseDateLike(value);
+  return parsed ? parsed.toLocaleDateString() : '—';
+}
+
 export default function TeacherDashboard() {
   const { user, studentIds } = useCurrentUser();
   const [students, setStudents] = useState([]);
@@ -64,6 +78,13 @@ export default function TeacherDashboard() {
 
         for (const studentDoc of studentsSnap.docs) {
           const student = { id: studentDoc.id, ...studentDoc.data(), uid: studentDoc.id };
+          const nextDue = parseDateLike(
+            student?.nextScreeningDueAt
+            || student?.screeningSchedule?.nextDueAt
+            || student?.baselineProfile?.nextScreeningDueAt
+          );
+          student.nextScreeningDueAt = nextDue;
+          student.screeningDueNow = Boolean(nextDue && nextDue.getTime() <= Date.now());
 
           try {
             const analysisQ = query(
@@ -260,6 +281,7 @@ export default function TeacherDashboard() {
                         <th className="text-center py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">Risk band</th>
                         <th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider hidden lg:table-cell">Weakest area</th>
                         <th className="text-center py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">Screening</th>
+                        <th className="text-center py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider hidden md:table-cell">Next Check-In</th>
                         <th className="text-center py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider hidden sm:table-cell">Sessions</th>
                         <th className="text-right py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">Actions</th>
                       </tr>
@@ -301,6 +323,15 @@ export default function TeacherDashboard() {
                                 <span className="inline-flex items-center text-xs px-2 py-1 rounded-full border font-semibold text-muted-foreground bg-muted border-border">
                                   Pending
                                 </span>
+                              )}
+                            </td>
+                            <td className="py-3 px-4 text-center hidden md:table-cell">
+                              {student.nextScreeningDueAt ? (
+                                <span className={`text-xs px-2 py-1 rounded-full border font-semibold ${student.screeningDueNow ? 'text-warning bg-warning/10 border-warning/30' : 'text-primary bg-primary/10 border-primary/30'}`}>
+                                  {student.screeningDueNow ? 'Due now' : shortDate(student.nextScreeningDueAt)}
+                                </span>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">—</span>
                               )}
                             </td>
                             <td className="py-3 px-4 text-center text-sm text-foreground hidden sm:table-cell">
